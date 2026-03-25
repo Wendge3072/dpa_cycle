@@ -245,6 +245,12 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg)
 	uint32_t data_sz = 0;
 	size_t cycles_inside = 0;
 
+	if (!data_from_host->not_first_run){
+		for (uint32_t j = 0; j < data_from_host->num_queues; j++){
+			this_sch_ctx->thrput_deficit[j] += thrput_weights[j] * thrput_quantum;
+		}
+	}
+
 	while (dtctx != NULL) {
 		struct flexio_dpa_dev_queue* this_tenant = NULL;
 		for (uint32_t j = 0; j < data_from_host->num_queues; j++){
