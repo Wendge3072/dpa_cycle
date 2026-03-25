@@ -65,29 +65,27 @@ static void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx, struct host2dev_pa
 		dpa_schs_ctx[i].queues[j].sq_ctx.sq_wqe_seg_idx = 0;
 	}
 	/* Initialize per-tenant cycle budgeting for the scheduler. */
-	// size_t total_weight = 0;
-	for (uint32_t t = 0; t < tenant_num_per_scheduler; t++) {
-		// total_weight += tenant_cycle_weights[t];
-		dpa_schs_ctx[i].tenant_cycle_used[t] = 0;
-		dpa_schs_ctx[i].tenant_cycle_target[t] = 0;
+	uint32_t max_weight = 0;
+	if (tenant_num_per_scheduler > 0) {
+		for (uint32_t t = 0; t < tenant_num_per_scheduler; t++) {
+			if (cycle_weights[t] > max_weight) {
+				max_weight = cycle_weights[t];
+			}
+			dpa_schs_ctx[i].tenant_cycle_used[t] = 0;
+		}
 	}
-	/* Assume one DPA core per scheduler for now; adjust if core topology changes. */
-	// size_t period_cycles = DPA_FREQ_HZ / 1000; /* 1ms */
-	// size_t dpa_core_num = 1;
-	// size_t total_budget_cycles = period_cycles * dpa_core_num;
-	// size_t remaining_cycles = total_budget_cycles;
-	// if (tenant_num_per_scheduler > 0 && total_weight > 0) {
-	// 	for (uint32_t t = 0; t < tenant_num_per_scheduler; t++) {
-	// 		size_t target = 0;
-	// 		if (t == tenant_num_per_scheduler - 1) {
-	// 			target = remaining_cycles;
-	// 		} else {
-	// 			target = (total_budget_cycles * tenant_cycle_weights[t]) / total_weight;
-	// 			remaining_cycles -= target;
-	// 		}
-	// 		dpa_schs_ctx[i].tenant_cycle_target[t] = target;
-	// 	}
-	// }
+	
+	/* 1ms period = 1,800,000 cycles at 1.8GHz. Base budget = 85% = 1,530,000 cycles per core. */
+	size_t base_cycle_budget = 1530000;
+	if (tenant_num_per_scheduler > 0 && max_weight > 0) {
+		for (uint32_t t = 0; t < tenant_num_per_scheduler; t++) {
+			dpa_schs_ctx[i].tenant_cycle_target[t] = base_cycle_budget * cycle_weights[t] / max_weight;
+		}
+	} else {
+		for (uint32_t t = 0; t < tenant_num_per_scheduler; t++) {
+			dpa_schs_ctx[i].tenant_cycle_target[t] = base_cycle_budget;
+		}
+	}
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 		uint32_t thd_id = i * data_from_host->num_queues + j;
 		__atomic_store_n(&offload_info[thd_id].busy_cycle, 0, __ATOMIC_RELAXED);
@@ -174,58 +172,76 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg)
 
 	size_t time_interval = 15;
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
-	register size_t report_interval_cycles = DPA_FREQ_HZ / 1; /* 100ms */
-	register size_t next_report_cycle = __dpa_thread_cycles() + report_interval_cycles;
-	size_t threads_per_tenant = 1;
-	if (tenant_num_per_scheduler > 0) {
-		threads_per_tenant = data_from_host->num_queues / tenant_num_per_scheduler;
-		if (threads_per_tenant == 0) {
-			threads_per_tenant = 1;
-		}
-	}
 	
+	/* 1ms scheduling period */
+	register size_t sched_period_cycles = DPA_FREQ_HZ / 1000;
+	register size_t next_sched_cycle = __dpa_thread_cycles() + sched_period_cycles;
+
+#if 1
+	register size_t report_interval_cycles = DPA_FREQ_HZ; /* 1s */
+	register size_t next_report_cycle = __dpa_thread_cycles() + report_interval_cycles;
+#endif
+
 	struct flexio_dpa_dev_queue* this_tenant = NULL;
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++){
 		uint32_t thd_id = i * data_from_host->num_queues + j;
 		this_tenant = &(this_sch_ctx->queues[j]);
 		offload_info[thd_id].tenant = this_tenant;
 		__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
-		// if (dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number)
-		// 	flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
 	}
 	
 	size_t now_cycle = __dpa_thread_cycles();
-	while(now_cycle < reschedule_cycle){
+	while(now_cycle < reschedule_cycle) {
 		now_cycle = __dpa_thread_cycles();
+		
 		for (uint32_t j = 0; j < data_from_host->num_queues; j++){
 			uint32_t thd_id = i * data_from_host->num_queues + j;
-			if (__atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE) == EU_OFF){
-				if (dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number){
+			uint32_t tenant_id = j % tenant_num_per_scheduler;
+			eu_status current_status = __atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE);
+			
+			if (current_status == EU_OFF) {
+				if (dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number) {
 					flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
-					// flexio_dev_print("sch %d sent msix for thd %d, cq_num %u\n", i, thd_id, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
 				}
 				__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
-			}
-			else if (__atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE) == EU_FREE){
+			} else if (current_status == EU_FREE) {
 				__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
+			} else if (current_status == EU_HANG) {
+				/* check if the thread exceeds cycle budget within the 1ms period */
+				size_t thd_cycles = __atomic_load_n(&offload_info[thd_id].busy_cycle, __ATOMIC_ACQUIRE);
+				if (tenant_num_per_scheduler > 0 && thd_cycles >= this_sch_ctx->tenant_cycle_target[tenant_id]) {
+					__atomic_store_n(&offload_info[thd_id].status, EU_OVER, __ATOMIC_RELEASE);
+				}
 			}
 		}
-		if (now_cycle >= next_report_cycle && tenant_num_per_scheduler > 0) {
-			for (uint32_t t = 0; t < tenant_num_per_scheduler; t++) {
-				this_sch_ctx->tenant_cycle_used[t] = 0;
-			}
+
+		if (now_cycle >= next_sched_cycle && tenant_num_per_scheduler > 0) {
 			for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 				uint32_t thd_id = i * data_from_host->num_queues + j;
 				uint32_t tenant_id = j % tenant_num_per_scheduler;
 				size_t thd_cycles = __atomic_exchange_n(&offload_info[thd_id].busy_cycle, 0, __ATOMIC_ACQ_REL);
+#if 1
 				this_sch_ctx->tenant_cycle_used[tenant_id] += thd_cycles;
+#endif
+				
+				/* Wake up over-budget threads for the new period */
+				if (__atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE) == EU_OVER) {
+					__atomic_store_n(&offload_info[thd_id].status, EU_OFF, __ATOMIC_RELEASE);
+				}
 			}
+			next_sched_cycle = now_cycle + sched_period_cycles;
+		}
+
+#if 1
+		if (now_cycle >= next_report_cycle && tenant_num_per_scheduler > 0) {
 			for (uint32_t t = 0; t < tenant_num_per_scheduler; t++) {
-				flexio_dev_print("sch %d 1ms cycle report: tenant %u used %zuk, target %zu\n",
-					i, t, this_sch_ctx->tenant_cycle_used[t]/1000, this_sch_ctx->tenant_cycle_target[t]);
+				flexio_dev_print("sch %d 1s cycle report: tenant %u total_used %zu\n",
+					i, t, this_sch_ctx->tenant_cycle_used[t]);
+				this_sch_ctx->tenant_cycle_used[t] = 0;
 			}
 			next_report_cycle = now_cycle + report_interval_cycles;
 		}
+#endif
 	}
 
 	__dpa_thread_memory_writeback();

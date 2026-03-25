@@ -43,6 +43,11 @@ __dpa_global__ void flexio_pp_dev_2(uint64_t thread_arg)
 			__atomic_fetch_add(&offload_info[i].busy_cycle, cycle_delta, __ATOMIC_RELAXED);
 			busy_cycle += cycle_delta;
 
+			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) == EU_OVER) {
+				flexio_dev_thread_reschedule();
+				return;
+			}
+
 			// size_t now_cycle = __dpa_thread_cycles();
 			pkt_count++;
 			// if (now_cycle >= reschedule_cycle) {

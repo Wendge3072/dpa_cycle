@@ -34,6 +34,11 @@ __dpa_global__ void flexio_pp_dev_31(uint64_t thread_arg)
 			__atomic_fetch_add(&offload_info[i].busy_cycle, cycle_delta, __ATOMIC_RELAXED);
 			// cyApkt += cycle_delta;
 
+			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) == EU_OVER) {
+				// flexio_dev_thread_reschedule();
+				continue;
+			}
+
 			pkt_count++;
 			if (pkt_count >= 1000000) {
 				pkt_count = 0;
@@ -88,6 +93,11 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
 			__atomic_fetch_add(&offload_info[i].busy_cycle, cycle_delta, __ATOMIC_RELAXED);
 			// cyApkt += cycle_delta;
+
+			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) == EU_OVER) {
+				flexio_dev_thread_reschedule();
+				continue;
+			}
 
 			pkt_count++;
 			if (pkt_count >= 1000000) {
