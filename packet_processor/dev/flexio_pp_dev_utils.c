@@ -47,7 +47,7 @@ void process_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
 }
 
-void pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx __unused, struct flexio_dpa_dev_queue* tenant)
+int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx __unused, struct flexio_dpa_dev_queue* tenant, int thd_id)
 {
 	/* RX packet handling variables */
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
@@ -72,34 +72,26 @@ void pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* th
 	/* Extract data (whole packet) pointed to by the RQ WQE */
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
-	// get_swap_mac(rq_data);
-	// uint64_t temp_mac = 0;
-	// memcpy(&temp_mac, rq_data, sizeof(uint64_t));
-	// flexio_dev_print("dst_mac: %llx\n", temp_mac);
-	swap_mac(rq_data);
-	// uint64_t src_mac = *((uint64_t *)rq_data);
-	// uint64_t dst_mac = *((uint64_t *)(rq_data + 6));
-	// *((uint64_t *)rq_data) = dst_mac;
-	// *((uint64_t *)(rq_data + 6)) = (src_mac & 0x0000FFFFFFFFFFFF) | (dst_mac & 0xFFFF000000000000);
+	uint32_t tenant_indicator = *(uint32_t *)(rq_data + 46);
+	int tenant_id = (tenant_indicator == 0) ? 0 : 1;
 
-	
+	if (__atomic_load_n(&offload_info[thd_id].restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
+		flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
+		return tenant_id;
+	}
+
+	swap_mac(rq_data);
+
 	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	tenant->sq_ctx.sq_wqe_seg_idx += 4;
 	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->rq_lkey, (uint64_t)rq_data);
 	
-	// static int first = 1;
-	// if (first) {
-	// 	uint64_t dst_mac = *((uint64_t *)rq_data);
-	// 	uint64_t src_mac = *((uint64_t *)(rq_data + 6));
-	// 	flexio_dev_print("data_sz and addr of 1st packet: %u, %p\n", data_sz, (void*)rq_data);
-	// 	flexio_dev_print("src mac: %lx, dst mac: %lx\n", src_mac, dst_mac);
-	// 	first = 0;
-	// }
-
 	/* Ring DB */
 	__dpa_thread_memory_writeback();
 	flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
 	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
+
+	return tenant_id;
 }
 
 flexio_dev_rpc_handler_t thd_ctx_init;

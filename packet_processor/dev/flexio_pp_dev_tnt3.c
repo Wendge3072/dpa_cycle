@@ -26,14 +26,11 @@ __dpa_global__ void flexio_pp_dev_31(uint64_t thread_arg)
 	register size_t cycle_delta;
 	while (dtctx != NULL) {
 		while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit) {
-			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) == EU_OVER) {
-				continue;
-			}
 			cycle_delta = __dpa_thread_cycles();
-			pp_queue(dtctx, this_thd_ctx, this_tenant);
+			int t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i);
 			com_step_cq(&(this_tenant->rq_cq_ctx));
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
-			__atomic_fetch_add(&offload_info[i].busy_cycle, cycle_delta, __ATOMIC_RELAXED);
+			__atomic_fetch_add(&offload_info[i].busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
 
 			pkt_count++;
 			if (pkt_count >= 1000000) {
@@ -79,14 +76,11 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	register size_t cycle_delta;
 	while (dtctx != NULL) {
 		while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit) {
-			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) == EU_OVER) {
-				continue;
-			}
 			cycle_delta = __dpa_thread_cycles();
-			pp_queue(dtctx, this_thd_ctx, this_tenant);
+			int t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i);
 			com_step_cq(&(this_tenant->rq_cq_ctx));
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
-			__atomic_fetch_add(&offload_info[i].busy_cycle, cycle_delta, __ATOMIC_RELAXED);
+			__atomic_fetch_add(&offload_info[i].busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
 
 			pkt_count++;
 			if (pkt_count >= 1000000) {

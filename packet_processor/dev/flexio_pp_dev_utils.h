@@ -75,10 +75,11 @@ enum {
 };
 struct offload_dispatch_info {
 	struct flexio_dpa_dev_queue* tenant;
-	size_t busy_cycle;
+	size_t busy_cycle[MAX_TENANT_NUM];
+	uint8_t restrict_tenant[MAX_TENANT_NUM];
 	uint32_t rq_wqe_idx;
 	eu_status status;
-	uint8_t reserved[3];
+	uint8_t reserved[1];
 };
 
 extern struct dpa_thread_context dpa_thds_ctx[190];
@@ -99,7 +100,7 @@ void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
 void process_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* tenant);
 
-void pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx, struct flexio_dpa_dev_queue* tenant);
+int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx, struct flexio_dpa_dev_queue* tenant, int thd_id);
 
 flexio_dev_rpc_handler_t thd_ctx_init;
 __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data);

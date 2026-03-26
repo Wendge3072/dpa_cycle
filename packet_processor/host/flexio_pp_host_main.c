@@ -2,7 +2,6 @@
 
 size_t scheduler_num = 1;
 size_t tenant_per_scheduler = 2;
-size_t threads_num_per_sch_tnt = 4;
 size_t threads_num_per_scheduler = 8;
 size_t threads_num = 0;
 size_t begin_thread = 16;
@@ -25,10 +24,9 @@ int main(int argc, char **argv)
     }
 
 	if (argc > 4) {
-		threads_num_per_sch_tnt = atoi(argv[4]);
+		threads_num_per_scheduler = atoi(argv[4]);
 	}
 
-	threads_num_per_scheduler = tenant_per_scheduler * threads_num_per_sch_tnt;
 	threads_num = threads_num_per_scheduler * scheduler_num;
 
 	if (argc > 5) {
