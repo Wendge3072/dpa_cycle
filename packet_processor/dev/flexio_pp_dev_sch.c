@@ -204,7 +204,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg)
 			if (current_status == EU_OFF) {
 				// if (dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number) {
 				flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
-				flexio_dev_print("msix send from sch %d to thd %d\n", i, thd_id);
+				// flexio_dev_print("msix send from sch %d to thd %d\n", i, thd_id);
 				// }
 				__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
 			} else if (current_status == EU_FREE) {
@@ -214,7 +214,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg)
 				size_t thd_cycles = __atomic_load_n(&offload_info[thd_id].busy_cycle, __ATOMIC_ACQUIRE);
 				if (thd_cycles >= this_sch_ctx->tenant_cycle_target[tenant_id]) {
 					__atomic_store_n(&offload_info[thd_id].status, EU_OVER, __ATOMIC_RELEASE);
-					flexio_dev_print("cycle restrict from sch %d to thd %d\n", i, thd_id);
+					// flexio_dev_print("cycle restrict from sch %d to thd %d\n", i, thd_id);
 				}
 			}
 		}
@@ -230,8 +230,8 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg)
 				
 				/* Wake up over-budget threads for the new period */
 				if (__atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE) == EU_OVER) {
-					__atomic_store_n(&offload_info[thd_id].status, EU_OFF, __ATOMIC_RELEASE);
-					// __atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
+					// __atomic_store_n(&offload_info[thd_id].status, EU_OFF, __ATOMIC_RELEASE);
+					__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
 				}
 			}
 			next_sched_cycle = now_cycle + sched_period_cycles;
