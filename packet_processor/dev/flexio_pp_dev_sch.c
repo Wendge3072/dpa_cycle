@@ -1,6 +1,7 @@
 #include "flexio_pp_dev_utils.h"
 
 #define SCHED_PERIOD_CYCLES_PERCENT DPA_FREQ_HZ / 1000 / 100
+#define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
 
 
 /* Initialize the app_ctx structure from the host data.
@@ -179,7 +180,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg)
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
 	
 	/* 1ms scheduling period */
-	register size_t sched_period_cycles = SCHED_PERIOD_CYCLES_PERCENT;
+	register size_t sched_period_cycles = SCHED_PERIOD_CYCLES;
 	register size_t next_sched_cycle = __dpa_thread_cycles() + sched_period_cycles;
 
 #if report_cycle_usage
