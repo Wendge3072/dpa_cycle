@@ -79,7 +79,7 @@ static void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx, struct host2dev_pa
 	}
 	
 	/* 1ms period = 1,800,000 cycles at 1.8GHz. Base budget = 85% = 1,530,000 cycles per core. */
-	size_t base_cycle_budget = SCHED_PERIOD_CYCLES_PERCENT * 89;
+	size_t base_cycle_budget = SCHED_PERIOD_CYCLES_PERCENT * 82;
 	// size_t base_cycle_budget = 1530000;
 	if (tenant_num_per_scheduler > 0 && max_weight > 0) {
 		for (uint32_t t = 0; t < tenant_num_per_scheduler; t++) {
