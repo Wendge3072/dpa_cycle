@@ -1,6 +1,6 @@
 #include "flexio_pp_dev_utils.h"
 
-#define report_cycle_usage 0
+#define report_cycle_usage 1
 #define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
 #define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
 
