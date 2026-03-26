@@ -28,8 +28,9 @@ __dpa_global__ void flexio_pp_dev_31(uint64_t thread_arg)
 	while (dtctx != NULL) {
 		while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit) {
 
+			eu_status status = __atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED);
 			cycle_delta = __dpa_thread_cycles();
-			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) != EU_OVER) {
+			if (status != EU_OVER) {
 				// flexio_dev_thread_reschedule();
 				pp_queue(dtctx, this_thd_ctx, this_tenant);
 				com_step_cq(&(this_tenant->rq_cq_ctx));
@@ -95,8 +96,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			// pp_queue(dtctx, this_thd_ctx, this_tenant);
 			// com_step_cq(&(this_tenant->rq_cq_ctx));
 			// cycle_delta = __dpa_thread_cycles() - cycle_delta;
+			eu_status status = __atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED);
 			cycle_delta = __dpa_thread_cycles();
-			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) != EU_OVER) {
+			if (status != EU_OVER) {
 				// flexio_dev_thread_reschedule();
 				pp_queue(dtctx, this_thd_ctx, this_tenant);
 				com_step_cq(&(this_tenant->rq_cq_ctx));
