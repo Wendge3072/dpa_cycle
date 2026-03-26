@@ -27,13 +27,14 @@ __dpa_global__ void flexio_pp_dev_31(uint64_t thread_arg)
 	// register size_t cyApkt = 0, cyMpkt = __dpa_thread_cycles();
 	while (dtctx != NULL) {
 		while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit) {
-			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) == EU_OVER) {
-				// flexio_dev_thread_reschedule();
-				continue;
-			}
+
 			cycle_delta = __dpa_thread_cycles();
-			pp_queue(dtctx, this_thd_ctx, this_tenant);
-			com_step_cq(&(this_tenant->rq_cq_ctx));
+			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) != EU_OVER) {
+				// flexio_dev_thread_reschedule();
+				pp_queue(dtctx, this_thd_ctx, this_tenant);
+				com_step_cq(&(this_tenant->rq_cq_ctx));
+				// continue;
+			}
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
 			__atomic_fetch_add(&offload_info[i].busy_cycle, cycle_delta, __ATOMIC_RELAXED);
 			// cyApkt += cycle_delta;
@@ -86,13 +87,21 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	// register size_t cyApkt = 0, cyMpkt = __dpa_thread_cycles();
 	while (dtctx != NULL) {
 		while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit) {
-			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) == EU_OVER) {
-				// flexio_dev_thread_reschedule();
-				continue;
-			}
+			// if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) == EU_OVER) {
+			// 	// flexio_dev_thread_reschedule();
+			// 	continue;
+			// }
+			// cycle_delta = __dpa_thread_cycles();
+			// pp_queue(dtctx, this_thd_ctx, this_tenant);
+			// com_step_cq(&(this_tenant->rq_cq_ctx));
+			// cycle_delta = __dpa_thread_cycles() - cycle_delta;
 			cycle_delta = __dpa_thread_cycles();
-			pp_queue(dtctx, this_thd_ctx, this_tenant);
-			com_step_cq(&(this_tenant->rq_cq_ctx));
+			if (__atomic_load_n(&offload_info[i].status, __ATOMIC_RELAXED) != EU_OVER) {
+				// flexio_dev_thread_reschedule();
+				pp_queue(dtctx, this_thd_ctx, this_tenant);
+				com_step_cq(&(this_tenant->rq_cq_ctx));
+				// continue;
+			}
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
 			__atomic_fetch_add(&offload_info[i].busy_cycle, cycle_delta, __ATOMIC_RELAXED);
 			// cyApkt += cycle_delta;
