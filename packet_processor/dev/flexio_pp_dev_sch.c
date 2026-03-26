@@ -1,5 +1,7 @@
 #include "flexio_pp_dev_utils.h"
 
+#define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
+
 
 /* Initialize the app_ctx structure from the host data.
  *  data_from_host - pointer host2dev_packet_processor_data from host.
@@ -76,7 +78,7 @@ static void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx, struct host2dev_pa
 	}
 	
 	/* 1ms period = 1,800,000 cycles at 1.8GHz. Base budget = 85% = 1,530,000 cycles per core. */
-	size_t base_cycle_budget = 1530000;
+	size_t base_cycle_budget = SCHED_PERIOD_CYCLES * (90 / 100);
 	if (tenant_num_per_scheduler > 0 && max_weight > 0) {
 		for (uint32_t t = 0; t < tenant_num_per_scheduler; t++) {
 			dpa_schs_ctx[i].tenant_cycle_target[t] = base_cycle_budget * cycle_weights[t] / max_weight;
@@ -176,7 +178,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg)
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
 	
 	/* 1ms scheduling period */
-	register size_t sched_period_cycles = DPA_FREQ_HZ / 1000;
+	register size_t sched_period_cycles = SCHED_PERIOD_CYCLES;
 	register size_t next_sched_cycle = __dpa_thread_cycles() + sched_period_cycles;
 
 #if report_cycle_usage
