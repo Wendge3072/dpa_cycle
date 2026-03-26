@@ -1,8 +1,8 @@
 #include "flexio_pp_dev_utils.h"
 
+#define report_cycle_usage 0
 #define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
 #define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
-
 
 /* Initialize the app_ctx structure from the host data.
  *  data_from_host - pointer host2dev_packet_processor_data from host.
@@ -145,7 +145,6 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct flexio_dp
 	*cycles_inside = __dpa_thread_cycles() - *cycles_inside;
 }
 
-#define report_cycle_usage 1
 
 flexio_dev_event_handler_t flexio_scheduler_handle;
 __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg)
