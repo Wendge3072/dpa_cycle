@@ -1,8 +1,6 @@
 #include "flexio_pp_dev_utils.h"
 
 #define report_cycle_usage 1
-#define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
-#define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
 
 /* Initialize the app_ctx structure from the host data.
  *  data_from_host - pointer host2dev_packet_processor_data from host.
@@ -80,7 +78,7 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 
 	/* 1ms period = 1,800,000 cycles at 1.8GHz. Base budget = 85% = 1,530,000
 	* cycles per core. */
-	size_t base_cycle_budget = SCHED_PERIOD_CYCLES_PERCENT * 70 * threads_num_per_scheduler;
+	size_t base_cycle_budget = SCHED_PERIOD_CYCLES_BUDGET * threads_num_per_scheduler;
 	// size_t base_cycle_budget = 1530000;
 	if (tenants_num > 0 && sum_weight > 0) {
 		for (uint32_t t = 0; t < tenants_num; t++) {

@@ -73,6 +73,11 @@ enum {
     EU_BUSY = 3,
     EU_OVER = 4,
 };
+
+#define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
+#define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
+#define SCHED_PERIOD_CYCLES_BUDGET SCHED_PERIOD_CYCLES_PERCENT * 80
+
 struct offload_dispatch_info {
 	struct flexio_dpa_dev_queue* tenant;
 	size_t busy_cycle[MAX_TENANT_NUM];
