@@ -74,10 +74,6 @@ enum {
     EU_OVER = 4,
 };
 
-#define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
-#define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
-#define SCHED_PERIOD_CYCLES_BUDGET SCHED_PERIOD_CYCLES_PERCENT * 80
-
 struct offload_dispatch_info {
 	struct flexio_dpa_dev_queue* tenant;
 	size_t busy_cycle[MAX_TENANT_NUM];
@@ -91,9 +87,11 @@ extern struct dpa_thread_context dpa_thds_ctx[190];
 extern struct dpa_sche_context dpa_schs_ctx[32];
 extern struct offload_dispatch_info offload_info[190];
 
-// static size_t tenant_num_per_scheduler;
-static size_t scheduler_num;
+#define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
+#define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
+#define SCHED_PERIOD_CYCLES_BUDGET SCHED_PERIOD_CYCLES_PERCENT * 85
 
+static size_t scheduler_num;
 static uint32_t thrput_quantum = 15625;
 static uint16_t q_packet = 670;
 static uint32_t thrput_weights[MAX_TENANT_NUM] = {30, 30};
