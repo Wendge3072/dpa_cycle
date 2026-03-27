@@ -168,6 +168,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
       (void *)thread_arg;
   struct flexio_dev_thread_ctx *dtctx;
   int i = data_from_host->sch_id;
+  size_t tenants_num = data_from_host->tenants_num;
   struct dpa_sche_context *this_sch_ctx = &(dpa_schs_ctx[i]);
 
   flexio_dev_get_thread_ctx(&dtctx);
