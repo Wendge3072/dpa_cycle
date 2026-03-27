@@ -86,7 +86,7 @@ extern struct dpa_thread_context dpa_thds_ctx[190];
 extern struct dpa_sche_context dpa_schs_ctx[32];
 extern struct offload_dispatch_info offload_info[190];
 
-static size_t tenant_num_per_scheduler;
+// static size_t tenant_num_per_scheduler;
 static size_t scheduler_num;
 
 static uint32_t thrput_quantum = 15625;

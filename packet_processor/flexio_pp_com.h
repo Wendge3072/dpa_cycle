@@ -164,7 +164,8 @@ struct host2dev_packet_processor_data_sch {
 	uint64_t dpa_result_buffer;
 	size_t num_queues;
 	size_t scheduler_num;
-	size_t tenant_num_per_scheduler;
+	size_t threads_num_per_scheduler;
+	size_t tenants_num;
 } __attribute__((__packed__, aligned(8)));
 
 

@@ -167,8 +167,9 @@ extern flexio_func_t flexio_pp_dev_32;
 extern flexio_func_t flexio_scheduler_handle;
 
 extern size_t scheduler_num;
-extern size_t tenant_per_scheduler;
+extern size_t threads_num_per_scheduler;
 extern size_t threads_num;
+extern size_t tenants_num;
 extern size_t begin_thread;
 extern uint64_t DMAC;
 extern size_t buffer_location;

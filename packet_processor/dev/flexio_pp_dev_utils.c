@@ -77,7 +77,7 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 
 	if (__atomic_load_n(&offload_info[thd_id].restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
 		flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-		return tenant_id;
+		return -1;
 	}
 
 	swap_mac(rq_data);

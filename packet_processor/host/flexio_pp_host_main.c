@@ -293,7 +293,7 @@ cleanup:
 	}
 
 	for (size_t i = 0; i < scheduler_num; i++) { 
-		for (size_t j = 0; j < tenant_per_scheduler; j++) { 
+		for (size_t j = 0; j < threads_num_per_scheduler; j++) { 
 			/* Clean up rx rule if created */
 			if (sch_ctx[i].queues[j].rx_flow_rule) {
 				if (destroy_rule(sch_ctx[i].queues[j].rx_flow_rule)) {

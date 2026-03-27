@@ -499,7 +499,8 @@ int copy_sch_data_to_dpa(struct app_context *app_ctx, struct thread_context *thd
 	h2d_data->not_first_run = 0;
 	h2d_data->sch_id = thd_ctx->thd_id;
 	h2d_data->scheduler_num = scheduler_num;
-	h2d_data->tenant_num_per_scheduler = tenant_per_scheduler;
+	h2d_data->threads_num_per_scheduler = threads_num_per_scheduler;
+	h2d_data->tenants_num = tenants_num;
 	printf("copied schedular id %d\n", h2d_data->sch_id);
 	h2d_data->buffer_location = buffer_location;
 	h2d_data->use_copy = use_copy;
