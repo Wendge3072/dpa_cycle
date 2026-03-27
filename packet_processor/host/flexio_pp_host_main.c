@@ -18,6 +18,7 @@ int main(int argc, char **argv)
 	if (argc > 2) {
 		scheduler_num = atoi(argv[2]);
 	}
+	printf("scheduler_num: %d\n", scheduler_num);
 
     if (argc > 3) {
         tenants_num = atoi(argv[3]);
