@@ -1,7 +1,7 @@
 #include "flexio_pp_host_utils.h"
 
 size_t scheduler_num = 1;
-size_t tenant_per_scheduler = 2;
+size_t tenants_num = 2;
 size_t threads_num_per_scheduler = 8;
 size_t threads_num = 0;
 size_t begin_thread = 16;
@@ -20,7 +20,7 @@ int main(int argc, char **argv)
 	}
 
     if (argc > 3) {
-        tenant_per_scheduler = atoi(argv[3]);
+        tenants_num = atoi(argv[3]);
     }
 
 	if (argc > 4) {
@@ -31,8 +31,8 @@ int main(int argc, char **argv)
 
 	if (argc > 5) {
         begin_thread = atoi(argv[5]);
-		if (begin_thread < ((scheduler_num + 16) / 16) * 16) {
-			printf("Invalid begin_thread value. It must be at least %d.\n", ((scheduler_num + 16) / 16) * 16);
+		if (begin_thread < ((scheduler_num + 15) / 16) * 16) {
+			printf("Invalid begin_thread value. It must be at least %d.\n", ((scheduler_num + 15) / 16) * 16);
 			return -1;
 		}
     }
