@@ -190,7 +190,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	register size_t next_sched_cycle = __dpa_thread_cycles() + sched_period_cycles;
 
 #if report_cycle_usage
-	register size_t report_interval_cycles = DPA_FREQ_HZ; /* 1s */
+	register size_t report_interval_cycles = DPA_FREQ_HZ / 2; /* 1s */
 	register size_t next_report_cycle = __dpa_thread_cycles() + report_interval_cycles;
 #endif
 
