@@ -76,6 +76,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 
 	register size_t pkt_count = 0;
 	register size_t cycle_delta;
+	register size_t t1_pkt_count = 0, t1_cycle_sum = 0;
 	while (dtctx != NULL) {
 		while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit) {
 			cycle_delta = __dpa_thread_cycles();
@@ -85,10 +86,15 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			if (t_id >= 0) {
 				__atomic_fetch_add(&offload_info[i].busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
 			}
+			if (t_id == 1) {
+				t1_cycle_sum += cycle_delta;
+				t1_pkt_count++;
+			}
 
 			pkt_count++;
 			if (pkt_count >= 1000000) {
 				pkt_count = 0;
+				flexio_dev_print("sch %d 1s cycle report: tenant %u total_used %10zu\n", i, 1, t1_cycle_sum/t1_pkt_count);
 				__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
 				__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 				flexio_dev_cq_arm(dtctx, this_thd_ctx->rq_cq_ctx.cq_idx, this_thd_ctx->rq_cq_ctx.cq_number);
