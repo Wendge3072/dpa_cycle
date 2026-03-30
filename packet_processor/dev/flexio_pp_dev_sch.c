@@ -83,10 +83,12 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	if (tenants_num > 0 && sum_weight > 0) {
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			dpa_schs_ctx[i].tenant_cycle_target[t] = base_cycle_budget * cycle_weights[t] / sum_weight;
+			flexio_dev_print("tenant %d cycle target: %ld\n", t, dpa_schs_ctx[i].tenant_cycle_target[t]);
 		}
 	} else {
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			dpa_schs_ctx[i].tenant_cycle_target[t] = base_cycle_budget / tenants_num;
+			flexio_dev_print("tenant %d cycle target: %ld\n", t, dpa_schs_ctx[i].tenant_cycle_target[t]);
 		}
 	}
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
