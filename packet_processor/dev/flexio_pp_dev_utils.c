@@ -8,44 +8,6 @@ struct dpa_sche_context dpa_schs_ctx[32];
 struct offload_dispatch_info offload_info[190];
 size_t check[2];
 
-// 只swap mac 需要 1400 cycle 左右+-10 
-void process_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* tenant)
-{
-	/* RX packet handling variables */
-	struct flexio_dev_wqe_rcv_data_seg *rwqe;
-	/* RQ WQE index */
-	uint32_t rq_wqe_idx;
-	/* Pointer to RQ data */
-	char *rq_data;
-
-	/* TX packet handling variables */
-	union flexio_dev_sqe_seg *swqe;
-
-	/* Size of the data */
-	uint32_t data_sz;
-
-	/* Extract relevant data from the CQE */
-	rq_wqe_idx = be16_to_cpu((volatile __be16)tenant->rq_cq_ctx.cqe->wqe_counter);
-	data_sz = be32_to_cpu((volatile __be32)tenant->rq_cq_ctx.cqe->byte_cnt);
-
-	/* Get the RQ WQE pointed to by the CQE */
-	rwqe = &(tenant->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
-
-	/* Extract data (whole packet) pointed to by the RQ WQE */
-	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
-
-	// get_swap_mac(rq_data);
-	swap_mac(rq_data);
-	
-	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
-	tenant->sq_ctx.sq_wqe_seg_idx += 4;
-	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->sq_lkey, (uint64_t)rq_data);
-
-	/* Ring DB */
-	__dpa_thread_memory_writeback();
-	flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
-	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-}
 
 int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx __unused, struct flexio_dpa_dev_queue* tenant, int thd_id)
 {
@@ -82,6 +44,7 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	}
 
 	swap_mac(rq_data);
+	volatile uint_test checksum = calculate_checksum_nrnd(rq_data, data_sz / 4, 1);
 
 	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	tenant->sq_ctx.sq_wqe_seg_idx += 4;
