@@ -103,7 +103,7 @@ void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
 void process_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* tenant);
 
-int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx, struct flexio_dpa_dev_queue* tenant, int thd_id);
+int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx, struct flexio_dpa_dev_queue* tenant, int thd_id, uint_test &result);
 
 flexio_dev_rpc_handler_t thd_ctx_init;
 __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data);
