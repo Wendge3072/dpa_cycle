@@ -237,7 +237,7 @@ uint16_t calculate_checksum(uint16_t *data, int length) {
 
 
 __attribute__((optimize("O0")))
-inline uint_test calculate_checksum_nrnd(uint_test *data, int length, int round) {
+uint_test calculate_checksum_nrnd(uint_test *data, int length, int round) {
 	uint_test sum = 0;
     int i;
 
