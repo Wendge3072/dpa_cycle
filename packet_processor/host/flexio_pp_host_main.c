@@ -142,7 +142,7 @@ int main(int argc, char **argv)
 		struct flexio_event_handler_attr handler_attr = {0};
 		handler_attr.host_stub_func = flexio_scheduler_handle;
 		handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
-		handler_attr.affinity.id = 0 + i;
+		handler_attr.affinity.id = 176 + i;
 
 		ret = flexio_event_handler_create(app_ctx.flexio_process, &handler_attr, &(sch_ctx[i].event_handler));
 		if (ret != FLEXIO_STATUS_SUCCESS) {
