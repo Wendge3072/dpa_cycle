@@ -210,10 +210,10 @@ int main(int argc, char **argv)
 		struct flexio_event_handler_attr handler_attr = {0};
 		uint64_t rpc_ret_val = 0;
 
-		if(i % 2)
-        	handler_attr.host_stub_func = flexio_pp_dev_31;
-		else
-			handler_attr.host_stub_func = flexio_pp_dev_32;
+		// if(i % 2)
+        // 	handler_attr.host_stub_func = flexio_pp_dev_31;
+		// else
+		handler_attr.host_stub_func = flexio_pp_dev_32;
 
         handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
 		handler_attr.affinity.id = i + begin_thread;
