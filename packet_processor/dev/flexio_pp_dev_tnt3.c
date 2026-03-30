@@ -78,11 +78,11 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	register size_t cycle_delta;
 	register size_t t0_pkt_count = 0, t0_cycle_sum = 0, t0_result_sum = 0;
 	register size_t t1_pkt_count = 0, t1_cycle_sum = 0, t1_result_sum = 0;
-	register uint_test result;
+	uint32_t result;
 	while (dtctx != NULL) {
 		while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit) {
 			cycle_delta = __dpa_thread_cycles();
-			int t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i, result);
+			int t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i, &result);
 			com_step_cq(&(this_tenant->rq_cq_ctx));
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
 			if (t_id >= 0) {

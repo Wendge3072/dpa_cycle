@@ -9,7 +9,7 @@ struct offload_dispatch_info offload_info[190];
 size_t check[2];
 
 
-int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx __unused, struct flexio_dpa_dev_queue* tenant, int thd_id)
+int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx __unused, struct flexio_dpa_dev_queue* tenant, int thd_id, uint32_t *result)
 {
 	/* RX packet handling variables */
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
@@ -40,14 +40,14 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	if (__atomic_load_n(&offload_info[thd_id].restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
 		__dpa_thread_memory_writeback();
 		flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-		result = 0;
+		*result = 0;
 		return -1;
 		// return tenant_id;
 	}
 
 	swap_mac(rq_data);
 	// volatile uint_test checksum = calculate_checksum_nrnd(rq_data, data_sz / 4, 1);
-	result = calculate_checksum_nrnd(rq_data, data_sz / 4, 1);
+	*result = calculate_checksum_nrnd(rq_data, data_sz / 4, 1);
 
 	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	tenant->sq_ctx.sq_wqe_seg_idx += 4;
