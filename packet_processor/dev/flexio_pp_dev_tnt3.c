@@ -94,7 +94,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			pkt_count++;
 			if (pkt_count >= 1000000) {
 				pkt_count = 0;
-				flexio_dev_print("sch %d 1s cycle report: tenant %u total_used %10zu\n", i, 1, t1_cycle_sum/t1_pkt_count);
+				flexio_dev_print("tnt report: tenant %u avg cycle per pkt %10zu\n", 1, t1_cycle_sum/t1_pkt_count);
 				__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
 				__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 				flexio_dev_cq_arm(dtctx, this_thd_ctx->rq_cq_ctx.cq_idx, this_thd_ctx->rq_cq_ctx.cq_number);
