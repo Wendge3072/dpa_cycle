@@ -256,7 +256,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 #if report_cycle_usage
 		if (now_cycle >= next_report_cycle && tenants_num > 0) {
 			for (uint32_t t = 0; t < tenants_num; t++) {
-				flexio_dev_print("sch %d 1s cycle report: tenant %u total_used %10zu\n", i, t, this_sch_ctx->tenant_cycle_used[t]);
+				flexio_dev_print("sch %d 1s cycle report: tenant %u total_used %10zu\n", i, t, this_sch_ctx->tenant_cycle_used[t]/1000);
 				this_sch_ctx->tenant_cycle_used[t] = 0;
 			}
 			next_report_cycle = now_cycle + report_interval_cycles;
