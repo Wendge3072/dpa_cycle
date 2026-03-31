@@ -31,6 +31,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 		while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit) {
 			cycle_delta = __dpa_thread_cycles();
 			int t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i, &result);
+			flexio_dev_print("pp_queue returned! \n");
 			// com_step_cq(&(this_tenant->rq_cq_ctx));
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
 			if (t_id >= 0) {
