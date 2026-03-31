@@ -230,6 +230,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				current_used += __atomic_load_n(&offload_info[thd_id].busy_cycle[t], __ATOMIC_ACQUIRE);
 			}
 			if (current_used >= this_sch_ctx->tenant_cycle_target[t]) {
+				flexio_dev_print("tenant %u used %zu >= target %zu\n", t, current_used, this_sch_ctx->tenant_cycle_target[t]);
 				for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 					uint32_t thd_id = i * data_from_host->num_queues + j;
 					__atomic_store_n(&offload_info[thd_id].restrict_tenant[t], 1, __ATOMIC_RELEASE);
