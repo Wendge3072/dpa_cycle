@@ -56,8 +56,8 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	/* Ring DB */
 	// __dpa_thread_memory_writeback();
 	// flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
-	// flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-	com_step_cq(&(tenant->rq_cq_ctx));
+	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
+	// com_step_cq(&(tenant->rq_cq_ctx));
 
 	return tenant_id;
 }
