@@ -37,27 +37,27 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	uint32_t tenant_indicator = *(uint32_t *)(rq_data + 46);
 	int tenant_id = (tenant_indicator == 0) ? 0 : 1;
 
-	// if (__atomic_load_n(&offload_info[thd_id].restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
-	// 	__dpa_thread_memory_writeback();
-	// 	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-	// 	*result = 0;
-	// 	return tenant_id;
-	// 	return tenant_id;
-	// }
+	if (__atomic_load_n(&offload_info[thd_id].restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
+		__dpa_thread_memory_writeback();
+		flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
+		// *result = 0;
+		// return tenant_id;
+		return -1;
+	}
 
-	// swap_mac(rq_data);
+	swap_mac(rq_data);
 	// volatile uint_test checksum = calculate_checksum_nrnd(rq_data, data_sz / 4, 1);
 	// *result = calculate_checksum_nrnd(rq_data + 42, (data_sz - 42) / 4, 1);
 
-	// swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
-	// tenant->sq_ctx.sq_wqe_seg_idx += 4;
-	// flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->rq_lkey, (uint64_t)rq_data);
+	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
+	tenant->sq_ctx.sq_wqe_seg_idx += 4;
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->rq_lkey, (uint64_t)rq_data);
 	
 	/* Ring DB */
-	// __dpa_thread_memory_writeback();
-	// flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
+	__dpa_thread_memory_writeback();
+	flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
 	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-	// com_step_cq(&(tenant->rq_cq_ctx));
+	com_step_cq(&(tenant->rq_cq_ctx));
 
 	return tenant_id;
 }
