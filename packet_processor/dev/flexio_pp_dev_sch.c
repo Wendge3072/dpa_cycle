@@ -211,7 +211,6 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	size_t now_cycle = __dpa_thread_cycles();
 	while (now_cycle < reschedule_cycle) {
-		now_cycle = __dpa_thread_cycles();
 
 		for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 			uint32_t thd_id = i * data_from_host->num_queues + j;
@@ -244,7 +243,8 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELEASE);
 			}
 		}
-
+		
+		now_cycle = __dpa_thread_cycles();
 		if (now_cycle >= next_sched_cycle) {
 // #if report_cycle_usage
 			
