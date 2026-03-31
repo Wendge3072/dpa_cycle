@@ -1,6 +1,6 @@
 #include "flexio_pp_dev_utils.h"
 
-#define report_pkt_usage 0
+#define report_pkt_usage 1
 
 flexio_dev_event_handler_t flexio_pp_dev_32;
 __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
