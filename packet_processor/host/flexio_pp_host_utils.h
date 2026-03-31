@@ -160,9 +160,9 @@ struct mlx5_ifc_dr_match_spec_bits {
 extern struct flexio_app *DEV_APP_NAME;
 /* Flex IO packet processor device (DPA) side function stub. */
 extern flexio_func_t thd_ctx_init;
-extern flexio_func_t flexio_pp_dev_1;
-extern flexio_func_t flexio_pp_dev_2;
-extern flexio_func_t flexio_pp_dev_31;
+// extern flexio_func_t flexio_pp_dev_1;
+// extern flexio_func_t flexio_pp_dev_2;
+// extern flexio_func_t flexio_pp_dev_31;
 extern flexio_func_t flexio_pp_dev_32;
 extern flexio_func_t flexio_scheduler_handle;
 
