@@ -1,6 +1,6 @@
 #include "flexio_pp_dev_utils.h"
 
-#define report_cycle_usage 0
+#define report_cycle_usage 1
 
 /* Initialize the app_ctx structure from the host data.
  *  data_from_host - pointer host2dev_packet_processor_data from host.
@@ -190,8 +190,10 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	register size_t next_sched_cycle = __dpa_thread_cycles() + sched_period_cycles;
 
 #if report_cycle_usage
+	register size_t overload_budget[2] = {0,0};
 	register size_t report_interval_cycles = DPA_FREQ_HZ / 1; /* 1s */
 	register size_t next_report_cycle = __dpa_thread_cycles() + report_interval_cycles;
+	register uint8_t reschedule = 0;
 #endif
 
 	struct flexio_dpa_dev_queue *this_tenant = NULL;
@@ -230,7 +232,9 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				current_used += __atomic_load_n(&offload_info[thd_id].busy_cycle[t], __ATOMIC_ACQUIRE);
 			}
 			if (current_used >= this_sch_ctx->tenant_cycle_target[t]) {
-				flexio_dev_print("tenant %u used %zu >= target %zu\n", t, current_used, this_sch_ctx->tenant_cycle_target[t]);
+#if report_cycle_usage
+				overload_budget[t] += (current_used - this_sch_ctx->tenant_cycle_target[t]);
+#endif
 				for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 					uint32_t thd_id = i * data_from_host->num_queues + j;
 					__atomic_store_n(&offload_info[thd_id].restrict_tenant[t], 1, __ATOMIC_RELEASE);
@@ -239,13 +243,18 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		}
 
 		if (now_cycle >= next_sched_cycle) {
+#if report_cycle_usage
+			reschedule++;
+#endif
 			for (uint32_t t = 0; t < tenants_num; t++) {
 				size_t total_thd_cycles = 0;
 				for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 					uint32_t thd_id = i * data_from_host->num_queues + j;
+#if report_cycle_usage
 					size_t thd_cycles = __atomic_exchange_n(&offload_info[thd_id].busy_cycle[t], 0, __ATOMIC_ACQ_REL);
-					__atomic_store_n(&offload_info[thd_id].restrict_tenant[t], 0, __ATOMIC_RELEASE);
 					total_thd_cycles += thd_cycles;
+#endif
+					__atomic_store_n(&offload_info[thd_id].restrict_tenant[t], 0, __ATOMIC_RELEASE);
 				}
 #if report_cycle_usage
 				this_sch_ctx->tenant_cycle_used[t] += total_thd_cycles;
@@ -258,8 +267,12 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		if (now_cycle >= next_report_cycle && tenants_num > 0) {
 			for (uint32_t t = 0; t < tenants_num; t++) {
 				flexio_dev_print("sch %d 1s cycle report: tenant %u total_used %10zu\n", i, t, this_sch_ctx->tenant_cycle_used[t]/1000);
+				flexio_dev_print("sch %d 1s cycle report: tenant %u overload_budget %10zu\n", i, t, overload_budget[t]/reschedule);
 				this_sch_ctx->tenant_cycle_used[t] = 0;
+				overload_budget[t] = 0;
 			}
+			flexio_dev_print("sch %d 1s cycle report: reschedule %d\n", i, reschedule);
+			reschedule = 0;
 			next_report_cycle = now_cycle + report_interval_cycles;
 		}
 #endif
