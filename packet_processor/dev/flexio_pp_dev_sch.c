@@ -191,9 +191,9 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 #if report_cycle_usage
 	register size_t overload_budget = 0;
-	register size_t report_interval_cycles = DPA_FREQ_HZ / 1; /* 1s */
+	register size_t report_interval_cycles = DPA_FREQ_HZ; /* 1s */
 	register size_t next_report_cycle = __dpa_thread_cycles() + report_interval_cycles;
-	register uint8_t reschedule = 0;
+	register uint16_t reschedule = 0;
 #endif
 
 	struct flexio_dpa_dev_queue *this_tenant = NULL;
