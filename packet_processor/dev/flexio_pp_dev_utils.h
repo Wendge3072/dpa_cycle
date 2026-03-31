@@ -78,6 +78,7 @@ struct offload_dispatch_info {
 	struct flexio_dpa_dev_queue* tenant;
 	size_t busy_cycle[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
+	uint32_t restrict_pkts[MAX_TENANT_NUM];
 	uint32_t rq_wqe_idx;
 	eu_status status;
 	uint8_t reserved[1];
