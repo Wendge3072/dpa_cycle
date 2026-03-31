@@ -54,7 +54,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 					flexio_dev_print("tnt 1 pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n", t1_pkt_count, t1_cycle_sum/t1_pkt_count, t1_result_sum/t1_pkt_count);
 				}
 				else{
-					flexio_dev_print("--- tnt running ---\n");
+					flexio_dev_print("--- tnt running ---, t0_pkt_count: %zu, t1_pkt_count: %zu\n", t0_pkt_count, t1_pkt_count);
 				}
 				__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
 				__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
