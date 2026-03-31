@@ -42,7 +42,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				t1_cycle_sum += cycle_delta;
 				t1_pkt_count++;
 				t1_result_sum += result;
-			} else if (tid == 0){
+			} else if (t_id == 0){
 				t0_cycle_sum += cycle_delta;
 				t0_pkt_count++;
 				t0_result_sum += result;
