@@ -263,7 +263,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				this_sch_ctx->tenant_cycle_used[t] += total_thd_cycles;
 #endif
 			}
-			next_sched_cycle = now_cycle + sched_period_cycles;
+			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
 		}
 
 #if report_cycle_usage
@@ -275,7 +275,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			flexio_dev_print("sch %d 1s cycle report: tenant1 overload_budget %10zu\n", i, overload_budget/reschedule);
 			flexio_dev_print("sch %d 1s cycle report: reschedule %d\n", i, reschedule);
 			overload_budget = 0,reschedule = 0;
-			next_report_cycle = now_cycle + report_interval_cycles;
+			next_report_cycle = now_cycle + DPA_FREQ_HZ;
 		}
 #endif
 	}
