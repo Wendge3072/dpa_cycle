@@ -226,7 +226,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 		/* Check cycle budgets aggregate per tenant */
 		for (uint32_t t = 0; t < tenants_num; t++) {
-			if (__atomic_load_n(&offload_info[thd_id].restrict_tenant[t], __ATOMIC_ACQUIRE)) continue;
+			if (__atomic_load_n(&offload_info[i * data_from_host->num_queues].restrict_tenant[t], __ATOMIC_ACQUIRE)) continue;
 
 			size_t current_used = 0;
 			for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
