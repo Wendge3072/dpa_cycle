@@ -1,6 +1,6 @@
 #include "flexio_pp_dev_utils.h"
 
-#define report_cycle_usage 1
+#define report_cycle_usage 0
 
 /* Initialize the app_ctx structure from the host data.
  *  data_from_host - pointer host2dev_packet_processor_data from host.
@@ -255,8 +255,8 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				size_t total_thd_cycles = 0;
 				for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 					uint32_t thd_id = i * data_from_host->num_queues + j;
-#if report_cycle_usage
 					size_t thd_cycles = __atomic_exchange_n(&offload_info[thd_id].busy_cycle[t], 0, __ATOMIC_ACQ_REL);
+#if report_cycle_usage
 					total_thd_cycles += thd_cycles;
 #endif
 					__atomic_store_n(&offload_info[thd_id].restrict_tenant[t], 0, __ATOMIC_RELEASE);
@@ -274,8 +274,8 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				// flexio_dev_print("sch %d 1s cycle report: tenant %u total_used %10zu\n", i, t, this_sch_ctx->tenant_cycle_used[t]/1000);
 				this_sch_ctx->tenant_cycle_used[t] = 0;
 			}
-			// flexio_dev_print("sch %d 1s cycle report: tenant1 overload_budget %10zu\n", i, overload_budget/reschedule);
-			// flexio_dev_print("sch %d 1s cycle report: reschedule %d\n", i, reschedule);
+			flexio_dev_print("sch %d 1s cycle report: tenant1 overload_budget %10zu\n", i, overload_budget/reschedule);
+			flexio_dev_print("sch %d 1s cycle report: reschedule %d\n", i, reschedule);
 			overload_budget = 0,reschedule = 0;
 			next_report_cycle = now_cycle + report_interval_cycles;
 		}
