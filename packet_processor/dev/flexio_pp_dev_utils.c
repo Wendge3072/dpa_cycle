@@ -41,7 +41,7 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 		// __dpa_thread_memory_writeback();
 		flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
 		com_step_cq(&(tenant->rq_cq_ctx));
-		__atomic_fetch_add(&offload_info[thd_id].restrict_pkts[tenant_id], 1, __ATOMIC_RELAXED);
+		// __atomic_fetch_add(&offload_info[thd_id].restrict_pkts[tenant_id], 1, __ATOMIC_RELAXED);
 		// *result = 0;
 		// return tenant_id;
 		return -1;
