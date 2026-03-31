@@ -270,7 +270,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				// flexio_dev_print("sch %d 1s cycle report: tenant %u total_used %10zu\n", i, t, this_sch_ctx->tenant_cycle_used[t]/1000);
 				this_sch_ctx->tenant_cycle_used[t] = 0;
 			}
-			flexio_dev_print("sch %d 1s cycle report: tenant %u overload_budget %10zu\n", i, t, overload_budget/reschedule);
+			flexio_dev_print("sch %d 1s cycle report: tenant1 overload_budget %10zu\n", i, overload_budget/reschedule);
 			flexio_dev_print("sch %d 1s cycle report: reschedule %d\n", i, reschedule);
 			overload_budget = 0,reschedule = 0;
 			next_report_cycle = now_cycle + report_interval_cycles;
