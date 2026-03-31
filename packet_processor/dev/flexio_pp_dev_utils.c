@@ -47,7 +47,7 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 
 	// swap_mac(rq_data);
 	// volatile uint_test checksum = calculate_checksum_nrnd(rq_data, data_sz / 4, 1);
-	*result = calculate_checksum_nrnd(rq_data + 42, (data_sz - 64) / 4, 1);
+	*result = calculate_checksum_nrnd(rq_data + 42, (data_sz - 42) / 4, 1);
 
 	// swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	// tenant->sq_ctx.sq_wqe_seg_idx += 4;
