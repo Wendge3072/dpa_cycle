@@ -38,8 +38,8 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	int tenant_id = (tenant_indicator == 0) ? 0 : 1;
 
 	if (__atomic_load_n(&offload_info[thd_id].restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
-		__dpa_thread_memory_writeback();
-		flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
+		// __dpa_thread_memory_writeback();
+		// flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
 		*result = 0;
 		return -1;
 		// return tenant_id;
@@ -57,6 +57,7 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	__dpa_thread_memory_writeback();
 	flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
 	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
+	com_step_cq(&(tenant->rq_cq_ctx));
 
 	return tenant_id;
 }
