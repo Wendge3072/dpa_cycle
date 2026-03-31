@@ -50,8 +50,8 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	// *result = calculate_checksum_nrnd(rq_data, data_sz / 4, 1);
 
 	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
-	// tenant->sq_ctx.sq_wqe_seg_idx += 4;
-	// flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->rq_lkey, (uint64_t)rq_data);
+	tenant->sq_ctx.sq_wqe_seg_idx += 4;
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->rq_lkey, (uint64_t)rq_data);
 	
 	/* Ring DB */
 	__dpa_thread_memory_writeback();
