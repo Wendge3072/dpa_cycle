@@ -36,8 +36,9 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 
 	uint32_t tenant_indicator = *(uint32_t *)(rq_data + 46);
 	int tenant_id = (tenant_indicator == 0) ? 0 : 1;
+	struct dpa_sche_context* sch_ctx = offload_info[thd_id].sch_ctx;
 
-	if (__atomic_load_n(&offload_info[thd_id].restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
+	if (__atomic_load_n(&sch_ctx->restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
 		// __dpa_thread_memory_writeback();
 		flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
 		com_step_cq(&(tenant->rq_cq_ctx));
