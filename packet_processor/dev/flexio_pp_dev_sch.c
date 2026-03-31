@@ -233,8 +233,10 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			}
 			if (current_used >= this_sch_ctx->tenant_cycle_target[t]) {
 #if report_cycle_usage
-				if (t)
+				if (t){
 					overload_budget += (current_used - this_sch_ctx->tenant_cycle_target[t]);
+					reschedule++;
+				}
 #endif
 				for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 					uint32_t thd_id = i * data_from_host->num_queues + j;
@@ -244,9 +246,9 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		}
 
 		if (now_cycle >= next_sched_cycle) {
-#if report_cycle_usage
-			reschedule++;
-#endif
+// #if report_cycle_usage
+			
+// #endif
 			for (uint32_t t = 0; t < tenants_num; t++) {
 				size_t total_thd_cycles = 0;
 				for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
