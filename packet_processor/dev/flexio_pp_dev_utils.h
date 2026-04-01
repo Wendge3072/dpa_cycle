@@ -97,7 +97,7 @@ static size_t scheduler_num;
 static uint32_t thrput_quantum = 15625;
 static uint16_t q_packet = 670;
 static uint32_t thrput_weights[MAX_TENANT_NUM] = {30, 30};
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 75};
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 76};
 
 flexio_dev_status_t change_status(uint16_t thd_id, eu_status old_status, eu_status new_status);
 
