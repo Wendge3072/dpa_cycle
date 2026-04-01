@@ -61,6 +61,7 @@ struct dpa_sche_context {
 	size_t tenant_cycle_used[MAX_TENANT_NUM];
 	size_t tenant_cycle_target[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
+	size_t busy_cycle[MAX_TENANT_NUM];
 };
 
 #define ATOMIC_COMMUNICATE
@@ -78,7 +79,6 @@ enum {
 struct offload_dispatch_info {
 	struct flexio_dpa_dev_queue* tenant;
 	struct dpa_sche_context* sch_ctx;
-	size_t busy_cycle[MAX_TENANT_NUM];
 	uint32_t restrict_pkts[MAX_TENANT_NUM];
 	uint32_t rq_wqe_idx;
 	eu_status status;

@@ -91,11 +91,8 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 			flexio_dev_print("scheduler %d, tenant %d cycle target: %ld\n", i, t, dpa_schs_ctx[i].tenant_cycle_target[t]);
 		}
 	}
-	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
-		uint32_t thd_id = i * data_from_host->num_queues + j;
-		for (uint32_t t = 0; t < tenants_num; t++) {
-			__atomic_store_n(&offload_info[thd_id].busy_cycle[t], 0, __ATOMIC_RELAXED);
-		}
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		__atomic_store_n(&dpa_schs_ctx[i].busy_cycle[t], 0, __ATOMIC_RELAXED);
 	}
 	// dpa_schs_ctx[i].rq_ctx.rqd_dpa_addr = data_from_host->queues[j].rq_transf.wqd_daddr;
 	// dpa_schs_ctx[i].sq_ctx.sqd_dpa_addr = data_from_host->queues[j].sq_transf.wqd_daddr;
@@ -197,15 +194,13 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	struct flexio_dpa_dev_queue *this_tenant = NULL;
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELEASE);
+		__atomic_store_n(&this_sch_ctx->busy_cycle[t], 0, __ATOMIC_RELEASE);
 	}
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 		uint32_t thd_id = i * data_from_host->num_queues + j;
 		this_tenant = &(this_sch_ctx->queues[j]);
 		offload_info[thd_id].tenant = this_tenant;
 		offload_info[thd_id].sch_ctx = this_sch_ctx;
-		for (uint32_t t = 0; t < tenants_num; t++) {
-			__atomic_store_n(&offload_info[thd_id].busy_cycle[t], 0, __ATOMIC_RELEASE);
-		}
 		__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
 	}
 
@@ -228,11 +223,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			if (__atomic_load_n(&this_sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) continue;
 
-			size_t current_used = 0;
-			for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
-				uint32_t thd_id = i * data_from_host->num_queues + j;
-				current_used += __atomic_load_n(&offload_info[thd_id].busy_cycle[t], __ATOMIC_ACQUIRE);
-			}
+			size_t current_used = __atomic_load_n(&this_sch_ctx->busy_cycle[t], __ATOMIC_ACQUIRE);
 			if (current_used >= this_sch_ctx->tenant_cycle_target[t]) {
 #if report_cycle_usage
 				if (t){
@@ -250,14 +241,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			
 // #endif
 			for (uint32_t t = 0; t < tenants_num; t++) {
-				size_t total_thd_cycles = 0;
-				for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
-					uint32_t thd_id = i * data_from_host->num_queues + j;
-					size_t thd_cycles = __atomic_exchange_n(&offload_info[thd_id].busy_cycle[t], 0, __ATOMIC_ACQ_REL);
-#if report_cycle_usage
-					total_thd_cycles += thd_cycles;
-#endif
-				}
+				size_t total_thd_cycles = __atomic_exchange_n(&this_sch_ctx->busy_cycle[t], 0, __ATOMIC_ACQ_REL);
 				__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELEASE);
 #if report_cycle_usage
 				this_sch_ctx->tenant_cycle_used[t] += total_thd_cycles;

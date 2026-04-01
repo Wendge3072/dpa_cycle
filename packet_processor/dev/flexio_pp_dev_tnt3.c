@@ -40,7 +40,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			// com_step_cq(&(this_tenant->rq_cq_ctx));
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
 			if (t_id >= 0) {
-				__atomic_fetch_add(&offload_info[i].busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
+				__atomic_fetch_add(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
 			}
 #if report_pkt_usage
 			if (t_id == 1) {
