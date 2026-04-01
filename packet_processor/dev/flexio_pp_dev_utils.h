@@ -89,8 +89,8 @@ extern struct dpa_thread_context dpa_thds_ctx[190];
 extern struct dpa_sche_context dpa_schs_ctx[32];
 extern struct offload_dispatch_info offload_info[190];
 
-#define report_cycle_usage 0
-#define report_pkt_usage 1
+#define report_cycle_usage 1
+#define report_pkt_usage 0
 
 #define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
 #define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
@@ -100,7 +100,7 @@ static size_t scheduler_num;
 static uint32_t thrput_quantum = 15625;
 static uint16_t q_packet = 670;
 static uint32_t thrput_weights[MAX_TENANT_NUM] = {30, 30};
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 50};
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 100};
 
 flexio_dev_status_t change_status(uint16_t thd_id, eu_status old_status, eu_status new_status);
 
