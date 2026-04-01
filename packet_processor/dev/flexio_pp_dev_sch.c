@@ -242,7 +242,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				size_t total_thd_cycles = __atomic_exchange_n(&this_sch_ctx->busy_cycle[t], 0, __ATOMIC_ACQ_REL);
 				__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELEASE);
 #if report_cycle_usage
-				this_sch_ctx->tenant_cycle_used[t] += total_thd_cycles;
+				this_sch_ctx->tenant_cycle_used[t] = total_thd_cycles;
 #endif
 			}
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
