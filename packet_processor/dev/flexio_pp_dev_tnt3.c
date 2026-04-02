@@ -31,7 +31,14 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
 			if (t_id >= 0) {
+#if CHECK_BUDGET_AT_WORKER
+				size_t current_used = __atomic_add_fetch(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
+				if (current_used >= offload_info[i].sch_ctx->tenant_cycle_target[t_id]) {
+					__atomic_store_n(&offload_info[i].sch_ctx->restrict_tenant[t_id], 1, __ATOMIC_RELEASE);
+				}
+#else
 				__atomic_fetch_add(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
+#endif
 			}
 #if report_pkt_usage
 			if (t_id == 1) {

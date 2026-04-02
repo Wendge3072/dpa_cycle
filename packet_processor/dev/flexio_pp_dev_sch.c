@@ -240,6 +240,13 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			
 			int pkt_lmt = 64;
 			while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit && pkt_lmt > 0) {
+#if !CHECK_BUDGET_AT_WORKER
+				size_t current_used = __atomic_load_n(&this_sch_ctx->busy_cycle[t], __ATOMIC_ACQUIRE);
+				if (current_used >= this_sch_ctx->tenant_cycle_target[t]) {
+					__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELEASE);
+					restricted = 1;
+				}
+#endif
 				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
 				uint16_t mac_index = scheduler_num * tenants_num + worker_i;
 				forward_packet(dtctx, this_tenant, mac_index, restricted);
@@ -248,22 +255,6 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			}
 		}
 
-		/* Check cycle budgets aggregate per tenant */
-		for (uint32_t t = 0; t < tenants_num; t++) {
-			if (__atomic_load_n(&this_sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) continue;
-
-			size_t current_used = __atomic_load_n(&this_sch_ctx->busy_cycle[t], __ATOMIC_ACQUIRE);
-			if (current_used >= this_sch_ctx->tenant_cycle_target[t]) {
-#if report_cycle_usage
-				if (t){
-					overload_budget += (current_used - this_sch_ctx->tenant_cycle_target[t]);
-					reschedule++;
-				}
-#endif
-				__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELEASE);
-			}
-		}
-		
 		now_cycle = __dpa_thread_cycles();
 		if (now_cycle >= next_sched_cycle) {
 			for (uint32_t t = 0; t < tenants_num; t++) {
@@ -271,6 +262,12 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELEASE);
 #if report_cycle_usage
 				this_sch_ctx->tenant_cycle_used[t] += total_thd_cycles;
+				if (t) {
+					if (total_thd_cycles > this_sch_ctx->tenant_cycle_target[t]) {
+						overload_budget += (total_thd_cycles - this_sch_ctx->tenant_cycle_target[t]);
+						reschedule++;
+					}
+				}
 #endif
 			}
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
