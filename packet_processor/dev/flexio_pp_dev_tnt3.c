@@ -18,7 +18,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 
 	register size_t pkt_count = 0;
 	register size_t cycle_delta;
-#if report_pkt_usage
+#if report_thread_pkt_usage
 	register size_t t0_pkt_count = 0, t0_cycle_sum = 0, t0_result_sum = 0;
 	register size_t t1_pkt_count = 0, t1_cycle_sum = 0, t1_result_sum = 0;
 	register size_t tb_pkt_count = 0, tb_cycle_sum = 0, tb_result_sum = 0;
@@ -40,7 +40,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				__atomic_fetch_add(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
 #endif
 			}
-#if report_pkt_usage
+#if report_thread_pkt_usage
 			if (t_id == 1) {
 				t1_cycle_sum += cycle_delta;
 				t1_pkt_count++;
@@ -58,7 +58,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			pkt_count++;
 			if (pkt_count >= 1000000) {
 				pkt_count = 0;
-#if report_pkt_usage
+#if report_thread_pkt_usage
 				if (t0_pkt_count != 0 && t1_pkt_count != 0) {
 					flexio_dev_print("tnt 0 pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n", t0_pkt_count, t0_cycle_sum/t0_pkt_count, t0_result_sum/t0_pkt_count);
 					flexio_dev_print("tnt 1 pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n", t1_pkt_count, t1_cycle_sum/t1_pkt_count, t1_result_sum/t1_pkt_count);

@@ -89,10 +89,11 @@ extern struct dpa_thread_context dpa_thds_ctx[190];
 extern struct dpa_sche_context dpa_schs_ctx[32];
 extern struct offload_dispatch_info offload_info[190];
 
-#define report_cycle_usage 0
-#define report_pkt_usage 1
+#define report_cycle_usage 1
+#define report_pkt_usage 0
+#define report_thread_pkt_usage 0
 
-#define CHECK_BUDGET_AT_WORKER 0 // 1 for Worker-side cycle monitoring, 0 for Scheduler-side inline monitoring
+#define CHECK_BUDGET_AT_WORKER 1 // 1 for Worker-side cycle monitoring, 0 for Scheduler-side inline monitoring
 
 #define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
 #define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
