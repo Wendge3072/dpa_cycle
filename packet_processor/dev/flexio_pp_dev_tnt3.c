@@ -30,8 +30,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	register size_t tb_pkt_count = 0, tb_cycle_sum = 0, tb_result_sum = 0;
 #endif
 	uint32_t result;
-	void *tx_inflight[(1UL << LOG_Q_DEPTH)] = {NULL};
-	uint32_t tx_t_id_inflight[(1UL << LOG_Q_DEPTH)] = {0};
 
 	while (dtctx != NULL) {
 		struct fwd_pkt pkt;
@@ -40,7 +38,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			cycle_delta = __dpa_thread_cycles();
 			uint32_t t_id = pkt.tnt_id;
 			
-			worker_pp_queue(dtctx, this_thd_ctx, i, &pkt, tx_inflight, tx_t_id_inflight, &result);
+			worker_pp_queue(dtctx, this_thd_ctx, i, &pkt, this_thd_ctx->tx_inflight, this_thd_ctx->tx_t_id_inflight, &result);
 			
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
 #if CHECK_BUDGET_AT_WORKER

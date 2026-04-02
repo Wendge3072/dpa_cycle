@@ -92,6 +92,14 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			sum_weight += cycle_weights[t];
 			dpa_schs_ctx[i].tenant_cycle_used[t] = 0;
+			dpa_schs_ctx[i].sch_rq_seen[t] = 0;
+			dpa_schs_ctx[i].sch_push_ok[t] = 0;
+			dpa_schs_ctx[i].sch_drop_restricted[t] = 0;
+			dpa_schs_ctx[i].sch_drop_mempool_empty[t] = 0;
+			dpa_schs_ctx[i].sch_drop_fifo_full[t] = 0;
+			dpa_schs_ctx[i].worker_tx_submit[t] = 0;
+			dpa_schs_ctx[i].worker_drop_restricted[t] = 0;
+			dpa_schs_ctx[i].worker_free_slots[t] = 0;
 		}
 	}
 
@@ -168,8 +176,8 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 //   *cycles_inside = __dpa_thread_cycles() - *cycles_inside;
 // }
 
-static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, struct flexio_dpa_dev_queue *tenant, 
-	uint32_t tnt_id, uint8_t restricted, uint32_t worker_i) {
+static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_sche_context *sch_ctx,
+	struct flexio_dpa_dev_queue *tenant, uint32_t tnt_id, uint8_t restricted, uint32_t worker_i) {
 	
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
 	uint32_t rq_wqe_idx;
@@ -181,15 +189,18 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, stru
 
 	rwqe = &(tenant->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+	sch_ctx->sch_rq_seen[tnt_id]++;
 
 	void *new_rq_data = NULL;
 	if (restricted) {
 		new_rq_data = rq_data; // reuse buffer, effectively dropping
+		sch_ctx->sch_drop_restricted[tnt_id]++;
 	} else {
 		new_rq_data = mempool_alloc(&tenant->mempool);
 		if (!new_rq_data) {
 			// flexio_dev_print("sch_id %d: Error, Mempool exhausted\n", sch_id);
 			new_rq_data = rq_data; // drop and reuse
+			sch_ctx->sch_drop_mempool_empty[tnt_id]++;
 		} else {
 			struct fwd_pkt pkt;
 			pkt.rq_data = rq_data;
@@ -199,6 +210,9 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, stru
 			
 			if (fifo_push(&dpa_thds_ctx[worker_i].fifo, &pkt) != 0) {
 				mempool_free(&tenant->mempool, rq_data); // dropped
+				sch_ctx->sch_drop_fifo_full[tnt_id]++;
+			} else {
+				sch_ctx->sch_push_ok[tnt_id]++;
 			}
 		}
 	}
@@ -274,6 +288,14 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	uint32_t rr_idx[MAX_TENANT_NUM] = {0};
 	register size_t current_used;
+	uint64_t prev_sch_rq_seen[MAX_TENANT_NUM] = {0};
+	uint64_t prev_sch_push_ok[MAX_TENANT_NUM] = {0};
+	uint64_t prev_sch_drop_restricted[MAX_TENANT_NUM] = {0};
+	uint64_t prev_sch_drop_mempool_empty[MAX_TENANT_NUM] = {0};
+	uint64_t prev_sch_drop_fifo_full[MAX_TENANT_NUM] = {0};
+	uint64_t prev_worker_tx_submit[MAX_TENANT_NUM] = {0};
+	uint64_t prev_worker_drop_restricted[MAX_TENANT_NUM] = {0};
+	uint64_t prev_worker_free_slots[MAX_TENANT_NUM] = {0};
 
 	size_t now_cycle = __dpa_thread_cycles();
 	while (now_cycle < reschedule_cycle) {
@@ -312,7 +334,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				}
 #endif
 				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
-				forward_packet(dtctx, i, this_tenant, t, restricted, worker_i);
+				forward_packet(dtctx, this_sch_ctx, this_tenant, t, restricted, worker_i);
 #if report_pkt_usage
 				if (restricted) sec_drop_pkts[t]++;
 				else sec_fwd_pkts[t]++;
@@ -354,6 +376,61 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			flexio_dev_print("sch %d 1s cycle report: reschedule %d\n", i, reschedule);
 			overload_budget = 0; reschedule = 0;
 #endif
+			for (uint32_t t = 0; t < tenants_num; t++) {
+				uint32_t free_rq_slots = mempool_count_free_slots(&this_sch_ctx->queues[t].mempool);
+				uint32_t used_rq_slots = MEM_POOL_SIZE - free_rq_slots;
+				uint64_t sch_rq_seen = this_sch_ctx->sch_rq_seen[t];
+				uint64_t sch_push_ok = this_sch_ctx->sch_push_ok[t];
+				uint64_t sch_drop_restricted = this_sch_ctx->sch_drop_restricted[t];
+				uint64_t sch_drop_mempool_empty = this_sch_ctx->sch_drop_mempool_empty[t];
+				uint64_t sch_drop_fifo_full = this_sch_ctx->sch_drop_fifo_full[t];
+				uint64_t worker_tx_submit = __atomic_load_n(&this_sch_ctx->worker_tx_submit[t], __ATOMIC_RELAXED);
+				uint64_t worker_drop_restricted = __atomic_load_n(&this_sch_ctx->worker_drop_restricted[t], __ATOMIC_RELAXED);
+				uint64_t worker_free_slots = __atomic_load_n(&this_sch_ctx->worker_free_slots[t], __ATOMIC_RELAXED);
+
+				uint64_t d_sch_rq_seen = sch_rq_seen - prev_sch_rq_seen[t];
+				uint64_t d_sch_push_ok = sch_push_ok - prev_sch_push_ok[t];
+				uint64_t d_sch_drop_restricted = sch_drop_restricted - prev_sch_drop_restricted[t];
+				uint64_t d_sch_drop_mempool_empty = sch_drop_mempool_empty - prev_sch_drop_mempool_empty[t];
+				uint64_t d_sch_drop_fifo_full = sch_drop_fifo_full - prev_sch_drop_fifo_full[t];
+				uint64_t d_worker_tx_submit = worker_tx_submit - prev_worker_tx_submit[t];
+				uint64_t d_worker_drop_restricted = worker_drop_restricted - prev_worker_drop_restricted[t];
+				uint64_t d_worker_free_slots = worker_free_slots - prev_worker_free_slots[t];
+				uint64_t pending_est = (sch_push_ok >= worker_free_slots) ? (sch_push_ok - worker_free_slots) : 0;
+
+				flexio_dev_print("sch %d slot report: tenant %u free_rq_slots %3u/%3u used %3u pending_est %5llu\n",
+					i, t, free_rq_slots, (uint32_t)MEM_POOL_SIZE, used_rq_slots,
+					(unsigned long long)pending_est);
+				flexio_dev_print("sch %d flow report: tenant %u 1s rq_seen %6llu push_ok %6llu drop(restrict/mempool/fifo) %6llu/%6llu/%6llu worker_tx %6llu worker_drop %6llu worker_free %6llu\n",
+					i, t,
+					(unsigned long long)d_sch_rq_seen, (unsigned long long)d_sch_push_ok,
+					(unsigned long long)d_sch_drop_restricted, (unsigned long long)d_sch_drop_mempool_empty,
+					(unsigned long long)d_sch_drop_fifo_full, (unsigned long long)d_worker_tx_submit,
+					(unsigned long long)d_worker_drop_restricted, (unsigned long long)d_worker_free_slots);
+
+				prev_sch_rq_seen[t] = sch_rq_seen;
+				prev_sch_push_ok[t] = sch_push_ok;
+				prev_sch_drop_restricted[t] = sch_drop_restricted;
+				prev_sch_drop_mempool_empty[t] = sch_drop_mempool_empty;
+				prev_sch_drop_fifo_full[t] = sch_drop_fifo_full;
+				prev_worker_tx_submit[t] = worker_tx_submit;
+				prev_worker_drop_restricted[t] = worker_drop_restricted;
+				prev_worker_free_slots[t] = worker_free_slots;
+			}
+
+			uint32_t fifo_total = 0;
+			uint32_t fifo_max = 0;
+			for (uint32_t j = 0; j < threads_num_per_scheduler; j++) {
+				uint32_t thd_id = i * threads_num_per_scheduler + j;
+				uint32_t fifo_depth = fifo_count(&dpa_thds_ctx[thd_id].fifo);
+				fifo_total += fifo_depth;
+				if (fifo_depth > fifo_max) {
+					fifo_max = fifo_depth;
+				}
+				flexio_dev_print("sch %d fifo report: worker %u depth %3u/%3u\n", i, thd_id, fifo_depth, (uint32_t)FIFO_QUEUE_SIZE);
+			}
+			flexio_dev_print("sch %d fifo report: total_depth %3u max_depth %3u\n", i, fifo_total, fifo_max);
+
 #if report_pkt_usage
 			flexio_dev_print("sch %d 1s pkt report: periods %zu\n", i, sec_sched_periods);
 			for (uint32_t t = 0; t < tenants_num; t++) {

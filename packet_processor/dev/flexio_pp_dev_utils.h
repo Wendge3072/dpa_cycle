@@ -68,6 +68,8 @@ struct dpa_thread_context {
 	dt_ctx_t dt_ctx;        /* SQ Data ring */
 	
 	struct sw_fifo fifo;    /* Software FIFO for pointer forwarding */
+	void *tx_inflight[Q_DEPTH];
+	uint32_t tx_t_id_inflight[Q_DEPTH];
 };
 
 /* The structure of the sample DPA application contains global data that the application uses */
@@ -86,6 +88,17 @@ struct dpa_sche_context {
 	size_t tenant_cycle_target[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
 	size_t busy_cycle[MAX_TENANT_NUM];
+
+	/* Observability counters for scheduler/worker balance debugging. */
+	uint64_t sch_rq_seen[MAX_TENANT_NUM];
+	uint64_t sch_push_ok[MAX_TENANT_NUM];
+	uint64_t sch_drop_restricted[MAX_TENANT_NUM];
+	uint64_t sch_drop_mempool_empty[MAX_TENANT_NUM];
+	uint64_t sch_drop_fifo_full[MAX_TENANT_NUM];
+
+	uint64_t worker_tx_submit[MAX_TENANT_NUM];
+	uint64_t worker_drop_restricted[MAX_TENANT_NUM];
+	uint64_t worker_free_slots[MAX_TENANT_NUM];
 };
 
 #define ATOMIC_COMMUNICATE
@@ -120,6 +133,8 @@ void mempool_free(struct memory_pool *pool, void *ptr);
 void fifo_init(struct sw_fifo *fifo);
 int fifo_push(struct sw_fifo *fifo, const struct fwd_pkt *pkt);
 int fifo_pop(struct sw_fifo *fifo, struct fwd_pkt *pkt);
+uint32_t fifo_count(struct sw_fifo *fifo);
+uint32_t mempool_count_free_slots(struct memory_pool *pool);
 
 int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context *this_thd_ctx,
 		    int thd_id, const struct fwd_pkt *pkt, void **tx_inflight,

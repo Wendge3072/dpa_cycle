@@ -88,6 +88,32 @@ int fifo_pop(struct sw_fifo *fifo, struct fwd_pkt *pkt)
 	return 0;
 }
 
+uint32_t fifo_count(struct sw_fifo *fifo)
+{
+	uint32_t h = __atomic_load_n(&fifo->head, __ATOMIC_ACQUIRE);
+	uint32_t t = __atomic_load_n(&fifo->tail, __ATOMIC_ACQUIRE);
+	uint32_t n = t - h;
+
+	if (n > FIFO_QUEUE_SIZE) {
+		n = FIFO_QUEUE_SIZE;
+	}
+	return n;
+}
+
+uint32_t mempool_count_free_slots(struct memory_pool *pool)
+{
+	uint32_t used = 0;
+
+	for (int i = 0; i < MEM_POOL_BITMAP_SIZE; i++) {
+		uint32_t map = __atomic_load_n(&pool->bitmap[i], __ATOMIC_ACQUIRE);
+		used += (uint32_t)__builtin_popcount(map);
+	}
+	if (used > MEM_POOL_SIZE) {
+		used = MEM_POOL_SIZE;
+	}
+	return MEM_POOL_SIZE - used;
+}
+
 int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context *this_thd_ctx,
 		    int thd_id, const struct fwd_pkt *pkt, void **tx_inflight,
 		    uint32_t *tx_t_id_inflight, uint32_t *result)
@@ -97,6 +123,8 @@ int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 
 	if (restricted) {
 		mempool_free(&offload_info[thd_id].sch_ctx->queues[t_id].mempool, pkt->rq_data);
+		__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_drop_restricted[t_id], 1, __ATOMIC_RELAXED);
+		__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_free_slots[t_id], 1, __ATOMIC_RELAXED);
 		return 1;
 	}
 
@@ -116,9 +144,11 @@ int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 	if (tx_inflight[ring_idx] != NULL) {
 		uint32_t prev_t_id = tx_t_id_inflight[ring_idx];
 		mempool_free(&offload_info[thd_id].sch_ctx->queues[prev_t_id].mempool, tx_inflight[ring_idx]);
+		__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_free_slots[prev_t_id], 1, __ATOMIC_RELAXED);
 	}
 	tx_inflight[ring_idx] = pkt->rq_data;
 	tx_t_id_inflight[ring_idx] = t_id;
+	__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_tx_submit[t_id], 1, __ATOMIC_RELAXED);
 	*result = 0;
 
 	return 0;
@@ -187,6 +217,10 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 	dpa_thds_ctx[i].rq_lkey = data_from_host->rq_transf.wqd_mkey_id;
 	dpa_thds_ctx[i].window_id = data_from_host->window_id;
 	dpa_thds_ctx[i].idx = i;
+	for (uint32_t k = 0; k < Q_DEPTH; k++) {
+		dpa_thds_ctx[i].tx_inflight[k] = NULL;
+		dpa_thds_ctx[i].tx_t_id_inflight[k] = 0;
+	}
 	/* Set context for RQ's CQ */
 	com_cq_ctx_init(&(dpa_thds_ctx[i].rq_cq_ctx),
 			data_from_host->rq_cq_transf.cq_num,
