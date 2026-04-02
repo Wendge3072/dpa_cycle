@@ -8,6 +8,87 @@ struct dpa_sche_context dpa_schs_ctx[32];
 struct offload_dispatch_info offload_info[190];
 size_t check[2];
 
+struct memory_pool dpa_mempools[32];
+
+void mempool_init(struct memory_pool *pool, void *base_addr, uint32_t lkey)
+{
+	pool->base_addr = base_addr;
+	pool->lkey = lkey;
+	for (int i = 0; i < MEM_POOL_BITMAP_SIZE; i++) {
+		pool->bitmap[i] = 0; // 0 = free, 1 = used
+	}
+}
+
+void *mempool_alloc(struct memory_pool *pool)
+{
+	for (int i = 0; i < MEM_POOL_BITMAP_SIZE; i++) {
+		uint32_t map = __atomic_load_n(&pool->bitmap[i], __ATOMIC_RELAXED);
+		if (map != 0xFFFFFFFF) { // ~0U
+			// Find the first free bit (0)
+			int bit_idx = __builtin_ctz(~map);
+			uint32_t mask = 1U << bit_idx;
+			
+			// Try to atomically set the bit
+			uint32_t prev = __atomic_fetch_or(&pool->bitmap[i], mask, __ATOMIC_RELEASE);
+			if ((prev & mask) == 0) {
+				// Successfully claimed
+				uint32_t slot_idx = i * 32 + bit_idx;
+				return (void *)((char *)pool->base_addr + slot_idx * Q_DATA_ENTRY_BSIZE);
+			}
+			// Another thread claimed it concurrently, retry (though in SPSC with 1 worker dropping, rare collision)
+			i--; // Retry this element
+		}
+	}
+	return NULL;
+}
+
+void mempool_free(struct memory_pool *pool, void *ptr)
+{
+	uint64_t offset = (char *)ptr - (char *)pool->base_addr;
+	uint32_t slot_idx = offset / Q_DATA_ENTRY_BSIZE;
+	uint32_t i = slot_idx / 32;
+	uint32_t bit_idx = slot_idx % 32;
+	uint32_t mask = ~(1U << bit_idx);
+	
+	__atomic_fetch_and(&pool->bitmap[i], mask, __ATOMIC_RELEASE);
+}
+
+void fifo_init(struct sw_fifo *fifo)
+{
+	fifo->head = 0;
+	fifo->tail = 0;
+}
+
+int fifo_push(struct sw_fifo *fifo, const struct fwd_pkt *pkt)
+{
+	uint32_t t = __atomic_load_n(&fifo->tail, __ATOMIC_RELAXED);
+	uint32_t h = __atomic_load_n(&fifo->head, __ATOMIC_ACQUIRE);
+	
+	if (t - h == FIFO_QUEUE_SIZE) {
+		return -1; // Full
+	}
+	
+	// Copy data
+	fifo->pkts[t % FIFO_QUEUE_SIZE] = *pkt;
+	__atomic_store_n(&fifo->tail, t + 1, __ATOMIC_RELEASE);
+	return 0;
+}
+
+int fifo_pop(struct sw_fifo *fifo, struct fwd_pkt *pkt)
+{
+	uint32_t h = __atomic_load_n(&fifo->head, __ATOMIC_RELAXED);
+	uint32_t t = __atomic_load_n(&fifo->tail, __ATOMIC_ACQUIRE);
+	
+	if (h == t) {
+		return -1; // Empty
+	}
+	
+	*pkt = fifo->pkts[h % FIFO_QUEUE_SIZE];
+	__atomic_store_n(&fifo->head, h + 1, __ATOMIC_RELEASE);
+	return 0;
+}
+
+
 
 int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx, int thd_id, uint32_t *result)
 {

@@ -91,8 +91,8 @@ struct thread_context {
 
 	void* result_buffer;
 	void* host_buffer;
-	
 	int thd_id;
+	int is_scheduler;
 };
 
 enum matcher_criteria {

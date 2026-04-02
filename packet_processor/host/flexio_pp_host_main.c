@@ -167,6 +167,7 @@ int main(int argc, char **argv)
 		sch_ctx[i].result_buffer_mkey_id = sch_ctx[i].mr->lkey;
 		sch_ctx[i].result_buffer = (char*)tmp_ptr;
 		sch_ctx[i].thd_id = i;
+		sch_ctx[i].is_scheduler = 1;
 		if (create_app_rq(&(app_ctx), &(sch_ctx[i]))) {
 			printf("Failed to create Flex EQ.\n");
 			err = -1;
@@ -245,6 +246,7 @@ int main(int argc, char **argv)
 		thd_ctx[i].result_buffer = (char*)tmp_ptr;
 		thd_ctx[i].host_buffer = (char*)tmp_ptr + SPEED_RESULT_SIZE;
 		thd_ctx[i].thd_id = i;
+		thd_ctx[i].is_scheduler = 0;
 
 		if (create_app_rq(&(app_ctx), &(thd_ctx[i]))) {
 			printf("Failed to create Flex EQ.\n");

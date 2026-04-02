@@ -66,6 +66,15 @@
 /* SQ/RQ DATA byte size is queue depth times entry byte size. */
 #define Q_DATA_BSIZE (Q_DEPTH * Q_DATA_ENTRY_BSIZE)
 
+/* Memory Pool Size (slots per scheduler queue) */
+#define MEM_POOL_SIZE (4 * Q_DEPTH)
+
+/* Scheduler RQ DATA byte size is pool size times entry byte size */
+#define SCH_Q_DATA_BSIZE (MEM_POOL_SIZE * Q_DATA_ENTRY_BSIZE)
+
+/* Thread FIFO queue size */
+#define FIFO_QUEUE_SIZE Q_DEPTH
+
 /* SQ WQE byte size is 64B. */
 #define LOG_SQ_WQE_BSIZE 6
 /* SQ WQE byte size log to value. */

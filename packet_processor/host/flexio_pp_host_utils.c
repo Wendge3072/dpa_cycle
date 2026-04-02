@@ -54,7 +54,7 @@ cleanup:
  * app_ctx - pointer to app_context structure.
  * daddr - address of MKEY data.
  */
-static struct flexio_mkey *create_dpa_mkey(struct app_context *app_ctx, flexio_uintptr_t daddr)
+static struct flexio_mkey *create_dpa_mkey(struct app_context *app_ctx, flexio_uintptr_t daddr, size_t size)
 {
 	/* Flex IO MKey attributes. */
 	struct flexio_mkey_attr mkey_attr = {0};
@@ -66,7 +66,7 @@ static struct flexio_mkey *create_dpa_mkey(struct app_context *app_ctx, flexio_u
 	/* Set MKey address. */
 	mkey_attr.daddr = daddr;
 	/* Set MKey length. */
-	mkey_attr.len = Q_DATA_BSIZE;
+	mkey_attr.len = size;
 	/* Set MKey access to memory write (from DPA). */
 	mkey_attr.access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE;
 	/* Create Flex IO MKey. */
@@ -147,7 +147,7 @@ static int sq_mem_alloc(struct app_context* app_ctx, struct thread_context* thd_
 			return -1;
 		}
 		/* Create an MKey for SQ data buffer to send. */
-		thd_ctx->queues[index].sqd_mkey = create_dpa_mkey(app_ctx, sq_transf->wqd_daddr);
+		thd_ctx->queues[index].sqd_mkey = create_dpa_mkey(app_ctx, sq_transf->wqd_daddr, Q_DATA_BSIZE);
 		if (!thd_ctx->queues[index].sqd_mkey) {
 			printf("Failed to create an MKey for SQ data buffer\n");
 			return -1;
@@ -173,14 +173,16 @@ static int rq_mem_alloc(struct app_context* app_ctx, struct thread_context* thd_
 {	
 	/* DBR source memory on the host (to copy). */
 	__be32 dbr[2] = { 0, 0 };
+	
+	size_t req_data_size = thd_ctx->is_scheduler ? SCH_Q_DATA_BSIZE : Q_DATA_BSIZE;
 
 	/* Allocate DPA heap memory for RQ data. */
-	flexio_buf_dev_alloc(process, Q_DATA_BSIZE, &rq_transf->wqd_daddr);
+	flexio_buf_dev_alloc(process, req_data_size, &rq_transf->wqd_daddr);
 	if (!rq_transf->wqd_daddr) {
 		return -1;
 	}
 	/* Create an MKey for RX buffer */
-	thd_ctx->queues[index].rqd_mkey = create_dpa_mkey(app_ctx, thd_ctx->queues[index].rq_transf.wqd_daddr);
+	thd_ctx->queues[index].rqd_mkey = create_dpa_mkey(app_ctx, thd_ctx->queues[index].rq_transf.wqd_daddr, req_data_size);
 	if (!thd_ctx->queues[index].rqd_mkey) {
 		printf("Failed to create an MKey for RQ data buffer.\n");
 		return -1;

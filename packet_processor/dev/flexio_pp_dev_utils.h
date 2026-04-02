@@ -12,6 +12,27 @@
 /* Shared header file for packet processor sample */
 #include "../flexio_pp_com.h"
 
+struct fwd_pkt {
+	void *rq_data;
+	uint32_t data_sz;
+	uint32_t rq_lkey;
+	uint16_t tnt_id;
+	uint16_t mac_index;
+};
+
+struct sw_fifo {
+	struct fwd_pkt pkts[FIFO_QUEUE_SIZE];
+	uint32_t head;
+	uint32_t tail;
+};
+
+#define MEM_POOL_BITMAP_SIZE (MEM_POOL_SIZE / 32)
+struct memory_pool {
+	void *base_addr;
+	uint32_t lkey;
+	uint32_t bitmap[MEM_POOL_BITMAP_SIZE];
+};
+
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
@@ -21,6 +42,8 @@ struct flexio_dpa_dev_queue {
 	sq_ctx_t sq_ctx;        /* SQ */
 	cq_ctx_t sq_cq_ctx;     /* SQ CQ */
 	dt_ctx_t dt_ctx;        /* SQ Data ring */
+	
+	struct memory_pool mempool; /* Per-queue memory pool */
 };
 
 /* The structure of the sample DPA application contains global data that the application uses */
@@ -44,6 +67,8 @@ struct dpa_thread_context {
 	sq_ctx_t sq_ctx;        /* SQ */
 	cq_ctx_t sq_cq_ctx;     /* SQ CQ */
 	dt_ctx_t dt_ctx;        /* SQ Data ring */
+	
+	struct sw_fifo fifo;    /* Software FIFO for pointer forwarding */
 };
 
 /* The structure of the sample DPA application contains global data that the application uses */
@@ -88,6 +113,14 @@ struct offload_dispatch_info {
 extern struct dpa_thread_context dpa_thds_ctx[190];
 extern struct dpa_sche_context dpa_schs_ctx[32];
 extern struct offload_dispatch_info offload_info[190];
+
+void mempool_init(struct memory_pool *pool, void *base_addr, uint32_t lkey);
+void *mempool_alloc(struct memory_pool *pool);
+void mempool_free(struct memory_pool *pool, void *ptr);
+
+void fifo_init(struct sw_fifo *fifo);
+int fifo_push(struct sw_fifo *fifo, const struct fwd_pkt *pkt);
+int fifo_pop(struct sw_fifo *fifo, struct fwd_pkt *pkt);
 
 #define report_cycle_usage 1
 #define report_pkt_usage 0

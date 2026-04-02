@@ -24,56 +24,79 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	register size_t tb_pkt_count = 0, tb_cycle_sum = 0, tb_result_sum = 0;
 #endif
 	uint32_t result;
+	void *tx_inflight[(1UL << LOG_Q_DEPTH)] = {NULL};
+	uint32_t tx_t_id_inflight[(1UL << LOG_Q_DEPTH)] = {0};
+
 	while (dtctx != NULL) {
-		while (flexio_dev_cqe_get_owner(this_thd_ctx->rq_cq_ctx.cqe) != this_thd_ctx->rq_cq_ctx.cq_hw_owner_bit) {
+		struct fwd_pkt pkt;
+		int pkt_lmt = 64;
+		while (fifo_pop(&this_thd_ctx->fifo, &pkt) == 0 && pkt_lmt > 0) {
 			cycle_delta = __dpa_thread_cycles();
-			int t_id = pp_queue(dtctx, this_thd_ctx, i, &result);
+			uint32_t t_id = pkt.tnt_id;
+			
+			uint8_t restricted = __atomic_load_n(&offload_info[i].sch_ctx->restrict_tenant[t_id], __ATOMIC_ACQUIRE);
+			if (restricted) {
+				mempool_free(&offload_info[i].sch_ctx->queues[t_id].mempool, pkt.rq_data);
+				// Skip processing
+			} else {
+				// Process packet
+				save_set_dstmac(pkt.rq_data, pkt.mac_index);
+				
+				union flexio_dev_sqe_seg *swqe;
+				swqe = &(this_thd_ctx->sq_ctx.sq_ring[(this_thd_ctx->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
+				this_thd_ctx->sq_ctx.sq_wqe_seg_idx += 4;
+				flexio_dev_swqe_seg_mem_ptr_data_set(swqe, pkt.data_sz, pkt.rq_lkey, (uint64_t)pkt.rq_data);
+				
+				__dpa_thread_memory_writeback();
+				this_thd_ctx->sq_ctx.sq_pi++;
+				flexio_dev_qp_sq_ring_db(dtctx, this_thd_ctx->sq_ctx.sq_pi, this_thd_ctx->sq_ctx.sq_number);
+				
+				// Defer freeing of previous packet to avoid freeing inflight memory
+				uint32_t ring_idx = this_thd_ctx->sq_ctx.sq_pi & ((1UL << LOG_Q_DEPTH) - 1);
+				if (tx_inflight[ring_idx] != NULL) {
+					uint32_t prev_t_id = tx_t_id_inflight[ring_idx];
+					mempool_free(&offload_info[i].sch_ctx->queues[prev_t_id].mempool, tx_inflight[ring_idx]);
+				}
+				tx_inflight[ring_idx] = pkt.rq_data;
+				tx_t_id_inflight[ring_idx] = t_id;
+				result = 0; // Dummy result
+			}
 			
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
-			if (t_id >= 0) {
 #if CHECK_BUDGET_AT_WORKER
-				size_t current_used = __atomic_add_fetch(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
-				if (current_used >= offload_info[i].sch_ctx->tenant_cycle_target[t_id]) {
-					__atomic_store_n(&offload_info[i].sch_ctx->restrict_tenant[t_id], 1, __ATOMIC_RELEASE);
-				}
-#else
-				__atomic_fetch_add(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
-#endif
+			size_t current_used = __atomic_add_fetch(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
+			if (current_used >= offload_info[i].sch_ctx->tenant_cycle_target[t_id]) {
+				__atomic_store_n(&offload_info[i].sch_ctx->restrict_tenant[t_id], 1, __ATOMIC_RELEASE);
 			}
+#else
+			__atomic_fetch_add(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
+#endif
+
 #if report_thread_pkt_usage
 			if (t_id == 1) {
 				t1_cycle_sum += cycle_delta;
 				t1_pkt_count++;
-				t1_result_sum += result;
 			} else if (t_id == 0){
 				t0_cycle_sum += cycle_delta;
 				t0_pkt_count++;
-				t0_result_sum += result;
-			} else {
-				tb_cycle_sum += cycle_delta;
-				tb_pkt_count++;
-				tb_result_sum += result;
 			}
 #endif
 			pkt_count++;
-			if (pkt_count >= 1000000) {
-				pkt_count = 0;
-#if report_thread_pkt_usage
-				if (t0_pkt_count != 0 && t1_pkt_count != 0) {
-					flexio_dev_print("tnt 0 pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n", t0_pkt_count, t0_cycle_sum/t0_pkt_count, t0_result_sum/t0_pkt_count);
-					flexio_dev_print("tnt 1 pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n", t1_pkt_count, t1_cycle_sum/t1_pkt_count, t1_result_sum/t1_pkt_count);
-					// flexio_dev_print("tnt b pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n", tb_pkt_count, tb_cycle_sum/tb_pkt_count, tb_result_sum/tb_pkt_count);
-				}
-				else{
-					flexio_dev_print("--- tnt running ---, t0_pkt_count: %zu, t1_pkt_count: %zu\n", t0_pkt_count, t1_pkt_count);
-				}
-#endif
-				__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-				flexio_dev_cq_arm(dtctx, this_thd_ctx->rq_cq_ctx.cq_idx, this_thd_ctx->rq_cq_ctx.cq_number);
-				flexio_dev_thread_reschedule();
-				return;
-			}
+			pkt_lmt--;
 		}
+		
+		if (pkt_count >= 1000000) {
+			pkt_count = 0;
+#if report_thread_pkt_usage
+			if (t0_pkt_count != 0 && t1_pkt_count != 0) {
+				flexio_dev_print("tnt 0 pkt num %7zu, avg cycle per pkt %6zu\n", t0_pkt_count, t0_cycle_sum/t0_pkt_count);
+				flexio_dev_print("tnt 1 pkt num %7zu, avg cycle per pkt %6zu\n", t1_pkt_count, t1_cycle_sum/t1_pkt_count);
+			} else {
+				flexio_dev_print("--- tnt running ---, t0_pkt_count: %zu, t1_pkt_count: %zu\n", t0_pkt_count, t1_pkt_count);
+			}
+#endif
+		}
+		flexio_dev_thread_reschedule();
 	}
 
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);

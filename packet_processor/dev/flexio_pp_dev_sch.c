@@ -65,6 +65,27 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 		}
 		dpa_schs_ctx[i].queues[j].sq_ctx.sq_wqe_seg_idx = 0;
 	}
+	/* Pre-allocate initial WQEs' data slots from mempool for hardware ring */
+	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
+		/* Initialize the memory pool on the queue's rq data area */
+		mempool_init(&dpa_schs_ctx[i].queues[j].mempool, 
+			(void *)data_from_host->queues[j].rq_transf.wqd_daddr, 
+			data_from_host->queues[j].rq_transf.wqd_mkey_id);
+		
+		for (uint32_t k = 0; k < (1UL << LOG_Q_DEPTH); k++) {
+			void *mem = mempool_alloc(&dpa_schs_ctx[i].queues[j].mempool);
+			if (!mem) continue;
+			// The host already initialized the hardware RQ ring with these exact addresses.
+			// We only do this alloc to reserve the first Q_DEPTH slots.
+			// No need to overwrite dpa_schs_ctx[i].queues[j].rq_ctx.rq_ring[k].addr
+		}
+	}
+
+	for (uint32_t j = 0; j < threads_num_per_scheduler; j++) {
+		uint32_t thd_id = i * threads_num_per_scheduler + j;
+		fifo_init(&dpa_thds_ctx[thd_id].fifo);
+	}
+
 	/* Initialize per-tenant cycle budgeting for the scheduler. */
 	uint32_t sum_weight = 0;
 	if (tenants_num > 0) {
@@ -147,11 +168,10 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 //   *cycles_inside = __dpa_thread_cycles() - *cycles_inside;
 // }
 
-static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct flexio_dpa_dev_queue *tenant, uint16_t mac_index, uint8_t restricted) {
+static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, struct flexio_dpa_dev_queue *tenant, uint32_t tnt_id, uint16_t mac_index, uint8_t restricted, uint32_t worker_i) {
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
 	uint32_t rq_wqe_idx;
 	char *rq_data;
-	union flexio_dev_sqe_seg *swqe;
 	uint32_t data_sz;
 
 	rq_wqe_idx = be16_to_cpu((volatile __be16)tenant->rq_cq_ctx.cqe->wqe_counter);
@@ -160,17 +180,30 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct flexio_dp
 	rwqe = &(tenant->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
-	if (!restricted) {
-		save_set_dstmac(rq_data, mac_index);
-
-		swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
-		tenant->sq_ctx.sq_wqe_seg_idx += 4;
-		flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->rq_lkey, (uint64_t)rq_data);
-
-		__dpa_thread_memory_writeback();
-		flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
+	void *new_rq_data = NULL;
+	if (restricted) {
+		new_rq_data = rq_data; // reuse buffer, effectively dropping
+	} else {
+		new_rq_data = mempool_alloc(&tenant->mempool);
+		if (!new_rq_data) {
+			flexio_dev_print("sch_id %d: Error, Mempool exhausted\n", sch_id);
+			new_rq_data = rq_data; // drop and reuse
+		} else {
+			struct fwd_pkt pkt;
+			pkt.rq_data = rq_data;
+			pkt.data_sz = data_sz;
+			pkt.rq_lkey = tenant->rq_lkey;
+			pkt.tnt_id = tnt_id;
+			pkt.mac_index = mac_index;
+			
+			if (fifo_push(&dpa_thds_ctx[worker_i].fifo, &pkt) != 0) {
+				mempool_free(&tenant->mempool, rq_data); // dropped
+			}
+		}
 	}
 	
+	rwqe->addr = cpu_to_be64((uint64_t)new_rq_data);
+
 	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
 	com_step_cq(&(tenant->rq_cq_ctx));
 }
@@ -264,7 +297,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 #endif
 				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
 				uint16_t mac_index = scheduler_num * tenants_num + worker_i;
-				forward_packet(dtctx, this_tenant, mac_index, restricted);
+				forward_packet(dtctx, i, this_tenant, t, mac_index, restricted, worker_i);
 #if report_pkt_usage
 				if (restricted) sec_drop_pkts[t]++;
 				else sec_fwd_pkts[t]++;
