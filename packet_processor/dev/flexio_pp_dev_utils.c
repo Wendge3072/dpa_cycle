@@ -14,43 +14,67 @@ void mempool_init(struct memory_pool *pool, void *base_addr, uint32_t lkey)
 {
 	pool->base_addr = base_addr;
 	pool->lkey = lkey;
-	for (int i = 0; i < MEM_POOL_BITMAP_SIZE; i++) {
-		pool->bitmap[i] = 0; // 0 = free, 1 = used
+	for (uint32_t i = 0; i < MEM_POOL_SIZE; i++) {
+		pool->free_cells[i].slot_idx = i;
+		pool->free_cells[i].seq = i + 1; /* Full queue initialization. */
 	}
+	pool->enqueue_pos = MEM_POOL_SIZE;
+	pool->dequeue_pos = 0;
+	pool->free_count = MEM_POOL_SIZE;
 }
 
 void *mempool_alloc(struct memory_pool *pool)
 {
-	for (int i = 0; i < MEM_POOL_BITMAP_SIZE; i++) {
-		uint32_t map = __atomic_load_n(&pool->bitmap[i], __ATOMIC_RELAXED);
-		if (map != 0xFFFFFFFF) { // ~0U
-			// Find the first free bit (0)
-			int bit_idx = __builtin_ctz(~map);
-			uint32_t mask = 1U << bit_idx;
-			
-			// Try to atomically set the bit
-			uint32_t prev = __atomic_fetch_or(&pool->bitmap[i], mask, __ATOMIC_RELEASE);
-			if ((prev & mask) == 0) {
-				// Successfully claimed
-				uint32_t slot_idx = i * 32 + bit_idx;
+	const uint32_t mask = MEM_POOL_SIZE - 1;
+	struct mempool_cell *cell;
+	uint32_t pos, seq;
+	int32_t dif;
+
+	while (1) {
+		pos = __atomic_load_n(&pool->dequeue_pos, __ATOMIC_RELAXED);
+		cell = &pool->free_cells[pos & mask];
+		seq = __atomic_load_n(&cell->seq, __ATOMIC_ACQUIRE);
+		dif = (int32_t)seq - (int32_t)(pos + 1);
+		if (dif == 0) {
+			if (__atomic_compare_exchange_n(&pool->dequeue_pos, &pos, pos + 1, 1,
+							__ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+				uint32_t slot_idx = cell->slot_idx;
+				__atomic_store_n(&cell->seq, pos + MEM_POOL_SIZE, __ATOMIC_RELEASE);
+				__atomic_fetch_sub(&pool->free_count, 1, __ATOMIC_RELAXED);
 				return (void *)((char *)pool->base_addr + slot_idx * Q_DATA_ENTRY_BSIZE);
 			}
-			// Another thread claimed it concurrently, retry (though in SPSC with 1 worker dropping, rare collision)
-			i--; // Retry this element
+		} else if (dif < 0) {
+			return NULL;
 		}
 	}
-	return NULL;
 }
 
 void mempool_free(struct memory_pool *pool, void *ptr)
 {
 	uint64_t offset = (char *)ptr - (char *)pool->base_addr;
 	uint32_t slot_idx = offset / Q_DATA_ENTRY_BSIZE;
-	uint32_t i = slot_idx / 32;
-	uint32_t bit_idx = slot_idx % 32;
-	uint32_t mask = ~(1U << bit_idx);
-	
-	__atomic_fetch_and(&pool->bitmap[i], mask, __ATOMIC_RELEASE);
+	const uint32_t mask = MEM_POOL_SIZE - 1;
+	struct mempool_cell *cell;
+	uint32_t pos, seq;
+	int32_t dif;
+
+	while (1) {
+		pos = __atomic_load_n(&pool->enqueue_pos, __ATOMIC_RELAXED);
+		cell = &pool->free_cells[pos & mask];
+		seq = __atomic_load_n(&cell->seq, __ATOMIC_ACQUIRE);
+		dif = (int32_t)seq - (int32_t)pos;
+		if (dif == 0) {
+			if (__atomic_compare_exchange_n(&pool->enqueue_pos, &pos, pos + 1, 1,
+							__ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+				cell->slot_idx = slot_idx;
+				__atomic_store_n(&cell->seq, pos + 1, __ATOMIC_RELEASE);
+				__atomic_fetch_add(&pool->free_count, 1, __ATOMIC_RELAXED);
+				return;
+			}
+		} else if (dif < 0) {
+			return;
+		}
+	}
 }
 
 void fifo_init(struct sw_fifo *fifo)
@@ -102,21 +126,11 @@ uint32_t fifo_count(struct sw_fifo *fifo)
 
 uint32_t mempool_count_free_slots(struct memory_pool *pool)
 {
-	uint32_t used = 0;
-
-	for (int i = 0; i < MEM_POOL_BITMAP_SIZE; i++) {
-		uint32_t map = __atomic_load_n(&pool->bitmap[i], __ATOMIC_ACQUIRE);
-		used += (uint32_t)__builtin_popcount(map);
-	}
-	if (used > MEM_POOL_SIZE) {
-		used = MEM_POOL_SIZE;
-	}
-	return MEM_POOL_SIZE - used;
+	return __atomic_load_n(&pool->free_count, __ATOMIC_ACQUIRE);
 }
 
 int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context *this_thd_ctx,
-		    int thd_id, const struct fwd_pkt *pkt, void **tx_inflight,
-		    uint32_t *tx_t_id_inflight, uint32_t *result)
+		    int thd_id, const struct fwd_pkt *pkt, uint32_t *result)
 {
 	uint32_t t_id = pkt->tnt_id;
 	uint8_t restricted = __atomic_load_n(&offload_info[thd_id].sch_ctx->restrict_tenant[t_id], __ATOMIC_ACQUIRE);
@@ -128,7 +142,7 @@ int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 		return 1;
 	}
 
-	swap_mac(pkt->rq_data);
+	get_swap_mac(pkt->rq_data);
 
 	union flexio_dev_sqe_seg *swqe;
 	swqe = &(this_thd_ctx->sq_ctx.sq_ring[(this_thd_ctx->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
@@ -139,16 +153,10 @@ int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 	this_thd_ctx->sq_ctx.sq_pi++;
 	flexio_dev_qp_sq_ring_db(dtctx, this_thd_ctx->sq_ctx.sq_pi, this_thd_ctx->sq_ctx.sq_number);
 
-	/* Defer freeing previous packet to avoid freeing inflight memory. */
-	uint32_t ring_idx = this_thd_ctx->sq_ctx.sq_pi & ((1UL << LOG_Q_DEPTH) - 1);
-	if (tx_inflight[ring_idx] != NULL) {
-		uint32_t prev_t_id = tx_t_id_inflight[ring_idx];
-		mempool_free(&offload_info[thd_id].sch_ctx->queues[prev_t_id].mempool, tx_inflight[ring_idx]);
-		__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_free_slots[prev_t_id], 1, __ATOMIC_RELAXED);
-	}
-	tx_inflight[ring_idx] = pkt->rq_data;
-	tx_t_id_inflight[ring_idx] = t_id;
+	/* Return packet slot to per-tenant free queue after TX submit. */
+	mempool_free(&offload_info[thd_id].sch_ctx->queues[t_id].mempool, pkt->rq_data);
 	__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_tx_submit[t_id], 1, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_free_slots[t_id], 1, __ATOMIC_RELAXED);
 	*result = 0;
 
 	return 0;
@@ -217,10 +225,6 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 	dpa_thds_ctx[i].rq_lkey = data_from_host->rq_transf.wqd_mkey_id;
 	dpa_thds_ctx[i].window_id = data_from_host->window_id;
 	dpa_thds_ctx[i].idx = i;
-	for (uint32_t k = 0; k < Q_DEPTH; k++) {
-		dpa_thds_ctx[i].tx_inflight[k] = NULL;
-		dpa_thds_ctx[i].tx_t_id_inflight[k] = 0;
-	}
 	/* Set context for RQ's CQ */
 	com_cq_ctx_init(&(dpa_thds_ctx[i].rq_cq_ctx),
 			data_from_host->rq_cq_transf.cq_num,

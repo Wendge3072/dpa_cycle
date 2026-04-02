@@ -12,6 +12,10 @@
 /* Shared header file for packet processor sample */
 #include "../flexio_pp_com.h"
 
+#if (MEM_POOL_SIZE & (MEM_POOL_SIZE - 1))
+#error "MEM_POOL_SIZE must be a power of two"
+#endif
+
 struct fwd_pkt {
 	void *rq_data;
 	uint32_t data_sz;
@@ -25,11 +29,18 @@ struct sw_fifo {
 	uint32_t tail;
 };
 
-#define MEM_POOL_BITMAP_SIZE (MEM_POOL_SIZE / 32)
+struct mempool_cell {
+	uint32_t slot_idx;
+	uint32_t seq;
+};
+
 struct memory_pool {
 	void *base_addr;
 	uint32_t lkey;
-	uint32_t bitmap[MEM_POOL_BITMAP_SIZE];
+	struct mempool_cell free_cells[MEM_POOL_SIZE];
+	uint32_t enqueue_pos;
+	uint32_t dequeue_pos;
+	uint32_t free_count;
 };
 
 struct flexio_dpa_dev_queue {
@@ -68,8 +79,6 @@ struct dpa_thread_context {
 	dt_ctx_t dt_ctx;        /* SQ Data ring */
 	
 	struct sw_fifo fifo;    /* Software FIFO for pointer forwarding */
-	void *tx_inflight[Q_DEPTH];
-	uint32_t tx_t_id_inflight[Q_DEPTH];
 };
 
 /* The structure of the sample DPA application contains global data that the application uses */
@@ -137,8 +146,7 @@ uint32_t fifo_count(struct sw_fifo *fifo);
 uint32_t mempool_count_free_slots(struct memory_pool *pool);
 
 int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context *this_thd_ctx,
-		    int thd_id, const struct fwd_pkt *pkt, void **tx_inflight,
-		    uint32_t *tx_t_id_inflight, uint32_t *result);
+		    int thd_id, const struct fwd_pkt *pkt, uint32_t *result);
 
 #define report_cycle_usage 1
 #define report_pkt_usage 0

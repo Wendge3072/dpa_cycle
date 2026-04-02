@@ -38,7 +38,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			cycle_delta = __dpa_thread_cycles();
 			uint32_t t_id = pkt.tnt_id;
 			
-			worker_pp_queue(dtctx, this_thd_ctx, i, &pkt, this_thd_ctx->tx_inflight, this_thd_ctx->tx_t_id_inflight, &result);
+			worker_pp_queue(dtctx, this_thd_ctx, i, &pkt, &result);
 			
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
 #if CHECK_BUDGET_AT_WORKER
