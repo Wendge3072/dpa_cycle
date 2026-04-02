@@ -92,6 +92,7 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			sum_weight += cycle_weights[t];
 			dpa_schs_ctx[i].tenant_cycle_used[t] = 0;
+#if report_balance_usage
 			dpa_schs_ctx[i].sch_rq_seen[t] = 0;
 			dpa_schs_ctx[i].sch_push_ok[t] = 0;
 			dpa_schs_ctx[i].sch_drop_restricted[t] = 0;
@@ -100,6 +101,7 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 			dpa_schs_ctx[i].worker_tx_submit[t] = 0;
 			dpa_schs_ctx[i].worker_drop_restricted[t] = 0;
 			dpa_schs_ctx[i].worker_free_slots[t] = 0;
+#endif
 		}
 	}
 
@@ -178,6 +180,9 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 
 static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_sche_context *sch_ctx,
 	struct flexio_dpa_dev_queue *tenant, uint32_t tnt_id, uint8_t restricted, uint32_t worker_i) {
+#if !report_balance_usage
+	(void)sch_ctx;
+#endif
 	
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
 	uint32_t rq_wqe_idx;
@@ -189,18 +194,24 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_sche_
 
 	rwqe = &(tenant->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+#if report_balance_usage
 	sch_ctx->sch_rq_seen[tnt_id]++;
+#endif
 
 	void *new_rq_data = NULL;
 	if (restricted) {
 		new_rq_data = rq_data; // reuse buffer, effectively dropping
+#if report_balance_usage
 		sch_ctx->sch_drop_restricted[tnt_id]++;
+#endif
 	} else {
 		new_rq_data = mempool_alloc(&tenant->mempool);
 		if (!new_rq_data) {
 			// flexio_dev_print("sch_id %d: Error, Mempool exhausted\n", sch_id);
 			new_rq_data = rq_data; // drop and reuse
+#if report_balance_usage
 			sch_ctx->sch_drop_mempool_empty[tnt_id]++;
+#endif
 		} else {
 			struct fwd_pkt pkt;
 			pkt.rq_data = rq_data;
@@ -210,10 +221,15 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_sche_
 			
 			if (fifo_push(&dpa_thds_ctx[worker_i].fifo, &pkt) != 0) {
 				mempool_free(&tenant->mempool, rq_data); // dropped
+#if report_balance_usage
 				sch_ctx->sch_drop_fifo_full[tnt_id]++;
-			} else {
+#endif
+			}
+#if report_balance_usage
+			else {
 				sch_ctx->sch_push_ok[tnt_id]++;
 			}
+#endif
 		}
 	}
 	
@@ -288,9 +304,12 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	uint32_t rr_idx[MAX_TENANT_NUM] = {0};
 	register size_t current_used;
+#if report_sch_fwd_avg_1m
 	uint64_t sch_stat_pkt_cnt = 0;
 	uint64_t sch_stat_start_cycle = 0;
 	uint64_t sch_stat_busy_cycles = 0;
+#endif
+#if report_cycle_usage || report_pkt_usage
 	uint64_t prev_sch_rq_seen[MAX_TENANT_NUM] = {0};
 	uint64_t prev_sch_push_ok[MAX_TENANT_NUM] = {0};
 	uint64_t prev_sch_drop_restricted[MAX_TENANT_NUM] = {0};
@@ -299,6 +318,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	uint64_t prev_worker_tx_submit[MAX_TENANT_NUM] = {0};
 	uint64_t prev_worker_drop_restricted[MAX_TENANT_NUM] = {0};
 	uint64_t prev_worker_free_slots[MAX_TENANT_NUM] = {0};
+#endif
 
 	size_t now_cycle = __dpa_thread_cycles();
 	while (now_cycle < reschedule_cycle) {
@@ -337,33 +357,33 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				}
 #endif
 				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
+#if report_sch_fwd_avg_1m
 				uint64_t sch_pkt_start_cycle = __dpa_thread_cycles();
 				if (sch_stat_pkt_cnt == 0) {
 					sch_stat_start_cycle = sch_pkt_start_cycle;
 					sch_stat_busy_cycles = 0;
 				}
+#endif
 				forward_packet(dtctx, this_sch_ctx, this_tenant, t, restricted, worker_i);
+#if report_sch_fwd_avg_1m
 				sch_stat_busy_cycles += (__dpa_thread_cycles() - sch_pkt_start_cycle);
 				sch_stat_pkt_cnt++;
 				if (sch_stat_pkt_cnt >= 1000000) {
 					uint64_t sch_stat_end_cycle = __dpa_thread_cycles();
 					uint64_t sch_total_cycles = sch_stat_end_cycle - sch_stat_start_cycle;
 					uint64_t sch_busy_cycles = sch_stat_busy_cycles;
-					uint64_t sch_wait_cycles = (sch_total_cycles > sch_busy_cycles) ? (sch_total_cycles - sch_busy_cycles) : 0;
+					uint64_t sch_avg_fwd = sch_busy_cycles / sch_stat_pkt_cnt;
 					uint64_t sch_avg_total = sch_total_cycles / sch_stat_pkt_cnt;
-					uint64_t sch_avg_busy = sch_busy_cycles / sch_stat_pkt_cnt;
-					uint64_t sch_avg_wait = sch_wait_cycles / sch_stat_pkt_cnt;
 
-					flexio_dev_print("sch %d 1M pkt cycle report: total %llu busy %llu wait %llu avg(total/busy/wait) %llu/%llu/%llu\n",
+					flexio_dev_print("sch %d 1M fwd cycle report: pkts %llu avg_fwd %llu avg_total %llu total_fwd %llu\n",
 						i,
-						(unsigned long long)sch_total_cycles,
-						(unsigned long long)sch_busy_cycles,
-						(unsigned long long)sch_wait_cycles,
+						(unsigned long long)sch_stat_pkt_cnt,
+						(unsigned long long)sch_avg_fwd,
 						(unsigned long long)sch_avg_total,
-						(unsigned long long)sch_avg_busy,
-						(unsigned long long)sch_avg_wait);
+						(unsigned long long)sch_busy_cycles);
 					sch_stat_pkt_cnt = 0;
 				}
+#endif
 #if report_pkt_usage
 				if (restricted) sec_drop_pkts[t]++;
 				else sec_fwd_pkts[t]++;

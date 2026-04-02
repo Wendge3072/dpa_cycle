@@ -137,12 +137,14 @@ int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 
 	if (restricted) {
 		mempool_free(&offload_info[thd_id].sch_ctx->queues[t_id].mempool, pkt->rq_data);
+#if report_balance_usage
 		__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_drop_restricted[t_id], 1, __ATOMIC_RELAXED);
 		__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_free_slots[t_id], 1, __ATOMIC_RELAXED);
+#endif
 		return 1;
 	}
 
-	swap_mac(pkt->rq_data);
+	get_swap_mac(pkt->rq_data);
 
 	union flexio_dev_sqe_seg *swqe;
 	swqe = &(this_thd_ctx->sq_ctx.sq_ring[(this_thd_ctx->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
@@ -155,8 +157,10 @@ int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 
 	/* Return packet slot to per-tenant free queue after TX submit. */
 	mempool_free(&offload_info[thd_id].sch_ctx->queues[t_id].mempool, pkt->rq_data);
+#if report_balance_usage
 	__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_tx_submit[t_id], 1, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&offload_info[thd_id].sch_ctx->worker_free_slots[t_id], 1, __ATOMIC_RELAXED);
+#endif
 	*result = 0;
 
 	return 0;

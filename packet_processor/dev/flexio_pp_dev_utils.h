@@ -148,9 +148,12 @@ uint32_t mempool_count_free_slots(struct memory_pool *pool);
 int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context *this_thd_ctx,
 		    int thd_id, const struct fwd_pkt *pkt, uint32_t *result);
 
-#define report_cycle_usage 1
+#define report_cycle_usage 0
 #define report_pkt_usage 0
 #define report_thread_pkt_usage 0
+#define report_sch_fwd_avg_1m 1
+#define report_thread_cycle_1m 0
+#define report_balance_usage 0
 
 #define CHECK_BUDGET_AT_WORKER 1 // 1 for Worker-side cycle monitoring, 0 for Scheduler-side inline monitoring
 
