@@ -222,8 +222,8 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 #endif
 
 #if report_pkt_usage
-	register size_t sec_fwd_pkts[MAX_TENANT_NUM] = {0};
-	register size_t sec_drop_pkts[MAX_TENANT_NUM] = {0};
+	size_t sec_fwd_pkts[MAX_TENANT_NUM] = {0};
+	size_t sec_drop_pkts[MAX_TENANT_NUM] = {0};
 	register size_t sec_sched_periods = 0;
 #endif
 
