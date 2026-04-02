@@ -88,6 +88,42 @@ int fifo_pop(struct sw_fifo *fifo, struct fwd_pkt *pkt)
 	return 0;
 }
 
+int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context *this_thd_ctx,
+		    int thd_id, const struct fwd_pkt *pkt, void **tx_inflight,
+		    uint32_t *tx_t_id_inflight, uint32_t *result)
+{
+	uint32_t t_id = pkt->tnt_id;
+	uint8_t restricted = __atomic_load_n(&offload_info[thd_id].sch_ctx->restrict_tenant[t_id], __ATOMIC_ACQUIRE);
+
+	if (restricted) {
+		mempool_free(&offload_info[thd_id].sch_ctx->queues[t_id].mempool, pkt->rq_data);
+		return 1;
+	}
+
+	swap_mac(pkt->rq_data);
+
+	union flexio_dev_sqe_seg *swqe;
+	swqe = &(this_thd_ctx->sq_ctx.sq_ring[(this_thd_ctx->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
+	this_thd_ctx->sq_ctx.sq_wqe_seg_idx += 4;
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, pkt->data_sz, pkt->rq_lkey, (uint64_t)pkt->rq_data);
+
+	__dpa_thread_memory_writeback();
+	this_thd_ctx->sq_ctx.sq_pi++;
+	flexio_dev_qp_sq_ring_db(dtctx, this_thd_ctx->sq_ctx.sq_pi, this_thd_ctx->sq_ctx.sq_number);
+
+	/* Defer freeing previous packet to avoid freeing inflight memory. */
+	uint32_t ring_idx = this_thd_ctx->sq_ctx.sq_pi & ((1UL << LOG_Q_DEPTH) - 1);
+	if (tx_inflight[ring_idx] != NULL) {
+		uint32_t prev_t_id = tx_t_id_inflight[ring_idx];
+		mempool_free(&offload_info[thd_id].sch_ctx->queues[prev_t_id].mempool, tx_inflight[ring_idx]);
+	}
+	tx_inflight[ring_idx] = pkt->rq_data;
+	tx_t_id_inflight[ring_idx] = t_id;
+	*result = 0;
+
+	return 0;
+}
+
 
 
 int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx, int thd_id, uint32_t *result)
@@ -233,4 +269,3 @@ inline void spin_on_status(uint16_t thd_id, eu_status expected_status){
 		status = __atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE);
 	}while (status != expected_status);
 }
-

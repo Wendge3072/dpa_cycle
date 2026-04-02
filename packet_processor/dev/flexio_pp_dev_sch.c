@@ -168,7 +168,7 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 //   *cycles_inside = __dpa_thread_cycles() - *cycles_inside;
 // }
 
-static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, struct flexio_dpa_dev_queue *tenant, uint32_t tnt_id, uint16_t mac_index, uint8_t restricted, uint32_t worker_i) {
+static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, struct flexio_dpa_dev_queue *tenant, uint32_t tnt_id, uint8_t restricted, uint32_t worker_i) {
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
 	uint32_t rq_wqe_idx;
 	char *rq_data;
@@ -194,7 +194,6 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, stru
 			pkt.data_sz = data_sz;
 			pkt.rq_lkey = tenant->rq_lkey;
 			pkt.tnt_id = tnt_id;
-			pkt.mac_index = mac_index;
 			
 			if (fifo_push(&dpa_thds_ctx[worker_i].fifo, &pkt) != 0) {
 				mempool_free(&tenant->mempool, rq_data); // dropped
@@ -311,8 +310,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				}
 #endif
 				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
-				uint16_t mac_index = scheduler_num * tenants_num + worker_i;
-				forward_packet(dtctx, i, this_tenant, t, mac_index, restricted, worker_i);
+				forward_packet(dtctx, i, this_tenant, t, restricted, worker_i);
 #if report_pkt_usage
 				if (restricted) sec_drop_pkts[t]++;
 				else sec_fwd_pkts[t]++;

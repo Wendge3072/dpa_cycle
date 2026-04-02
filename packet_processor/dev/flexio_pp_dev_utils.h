@@ -17,7 +17,6 @@ struct fwd_pkt {
 	uint32_t data_sz;
 	uint32_t rq_lkey;
 	uint16_t tnt_id;
-	uint16_t mac_index;
 };
 
 struct sw_fifo {
@@ -121,6 +120,10 @@ void mempool_free(struct memory_pool *pool, void *ptr);
 void fifo_init(struct sw_fifo *fifo);
 int fifo_push(struct sw_fifo *fifo, const struct fwd_pkt *pkt);
 int fifo_pop(struct sw_fifo *fifo, struct fwd_pkt *pkt);
+
+int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context *this_thd_ctx,
+		    int thd_id, const struct fwd_pkt *pkt, void **tx_inflight,
+		    uint32_t *tx_t_id_inflight, uint32_t *result);
 
 #define report_cycle_usage 1
 #define report_pkt_usage 0
