@@ -142,7 +142,7 @@ int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 		return 1;
 	}
 
-	get_swap_mac(pkt->rq_data);
+	swap_mac(pkt->rq_data);
 
 	union flexio_dev_sqe_seg *swqe;
 	swqe = &(this_thd_ctx->sq_ctx.sq_ring[(this_thd_ctx->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
@@ -192,7 +192,8 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	uint32_t tenant_indicator = *(uint32_t *)(rq_data + 46);
 	int tenant_id = (tenant_indicator == 0) ? 0 : 1;
 
-	get_swap_mac(rq_data);
+	// get_swap_mac(rq_data);
+	swap_mac(pkt->rq_data);
 
 	// if (tenant_id == 1) {
 	// 	*result = calculate_checksum_nrnd((uint_test*)rq_data, data_sz / 4, 5);
