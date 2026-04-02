@@ -133,7 +133,7 @@ int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 
 #define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
 #define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
-#define SCHED_PERIOD_CYCLES_BUDGET SCHED_PERIOD_CYCLES_PERCENT * 40
+#define SCHED_PERIOD_CYCLES_BUDGET SCHED_PERIOD_CYCLES_PERCENT * 80
 
 static size_t scheduler_num;
 static uint32_t thrput_quantum = 15625;
