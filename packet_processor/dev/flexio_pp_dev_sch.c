@@ -214,8 +214,17 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 #if report_cycle_usage
 	register size_t overload_budget = 0;
-	register size_t next_report_cycle = __dpa_thread_cycles() + DPA_FREQ_HZ;
 	register uint16_t reschedule = 0;
+#endif
+
+#if report_cycle_usage || report_pkt_usage
+	register size_t next_report_cycle = __dpa_thread_cycles() + DPA_FREQ_HZ;
+#endif
+
+#if report_pkt_usage
+	register size_t sec_fwd_pkts[MAX_TENANT_NUM] = {0};
+	register size_t sec_drop_pkts[MAX_TENANT_NUM] = {0};
+	register size_t sec_sched_periods = 0;
 #endif
 
 	struct flexio_dpa_dev_queue *this_tenant = NULL;
@@ -256,6 +265,10 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
 				uint16_t mac_index = scheduler_num * tenants_num + worker_i;
 				forward_packet(dtctx, this_tenant, mac_index, restricted);
+#if report_pkt_usage
+				if (restricted) sec_drop_pkts[t]++;
+				else sec_fwd_pkts[t]++;
+#endif
 				rr_idx[t]++;
 				pkt_lmt--;
 			}
@@ -263,6 +276,9 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 		now_cycle = __dpa_thread_cycles();
 		if (now_cycle >= next_sched_cycle) {
+#if report_pkt_usage
+			sec_sched_periods++;
+#endif
 			for (uint32_t t = 0; t < tenants_num; t++) {
 				size_t total_thd_cycles = __atomic_exchange_n(&this_sch_ctx->busy_cycle[t], 0, __ATOMIC_ACQ_REL);
 				__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELEASE);
@@ -279,15 +295,28 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
 		}
 
-#if report_cycle_usage
+#if report_cycle_usage || report_pkt_usage
 		if (now_cycle >= next_report_cycle && tenants_num > 0) {
+#if report_cycle_usage
 			for (uint32_t t = 0; t < tenants_num; t++) {
 				flexio_dev_print("sch %d cycle report: tenant %u total_used %10zu\n", i, t, this_sch_ctx->tenant_cycle_used[t]/1000);
 				this_sch_ctx->tenant_cycle_used[t] = 0;
 			}
-			flexio_dev_print("sch %d 1s cycle report: tenant1 overload_budget %10zu\n", i, overload_budget/reschedule);
+			flexio_dev_print("sch %d 1s cycle report: tenant1 overload_budget %10zu\n", i, overload_budget/(reschedule ? reschedule : 1));
 			flexio_dev_print("sch %d 1s cycle report: reschedule %d\n", i, reschedule);
-			overload_budget = 0,reschedule = 0;
+			overload_budget = 0; reschedule = 0;
+#endif
+#if report_pkt_usage
+			flexio_dev_print("sch %d 1s pkt report: periods %zu\n", i, sec_sched_periods);
+			for (uint32_t t = 0; t < tenants_num; t++) {
+				size_t avg_fwd = sec_sched_periods > 0 ? sec_fwd_pkts[t] / sec_sched_periods : 0;
+				size_t avg_drp = sec_sched_periods > 0 ? sec_drop_pkts[t] / sec_sched_periods : 0;
+				flexio_dev_print("   tenant %u: avg_fwd %zu, avg_drop %zu per 1ms\n", t, avg_fwd, avg_drp);
+				sec_fwd_pkts[t] = 0;
+				sec_drop_pkts[t] = 0;
+			}
+			sec_sched_periods = 0;
+#endif
 			next_report_cycle = now_cycle + DPA_FREQ_HZ;
 		}
 #endif
