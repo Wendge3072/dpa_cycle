@@ -71,12 +71,12 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	for (int i = 0; i < scheduler_num; i++) {
-		sch_ctx[i].queues = malloc(sizeof(struct flexio_queues) * threads_num_per_scheduler);
+		sch_ctx[i].queues = malloc(sizeof(struct flexio_queues) * tenants_num);
 		if (sch_ctx[i].queues == NULL) {
 			printf("malloc scheduler queue context failed\n");
 			return -1;
 		}
-		sch_ctx[i].num_queues = threads_num_per_scheduler;
+		sch_ctx[i].num_queues = tenants_num;
 	}
 
 	if (geteuid()) {
@@ -179,8 +179,8 @@ int main(int argc, char **argv)
 		}
 
 
-		for (int j = 0; j < threads_num_per_scheduler; j++) {
-			uint64_t cur_dmac = DMAC + i * threads_num_per_scheduler + j;
+		for (int j = 0; j < tenants_num; j++) {
+			uint64_t cur_dmac = DMAC + i * tenants_num + j;
 			// uint64_t cur_dmac = DMAC + (uint64_t)(j * 2 + (i & 1));
 
 			sch_ctx[i].queues[j].rq_tir_obj = flexio_rq_get_tir(sch_ctx[i].queues[j].flexio_rq_ptr);
@@ -209,6 +209,9 @@ int main(int argc, char **argv)
 	for (int i = 0; i < threads_num; i++) {
 		struct flexio_event_handler_attr handler_attr = {0};
 		uint64_t rpc_ret_val = 0;
+		
+		uint64_t cur_dmac = DMAC + scheduler_num * tenants_num + i;
+		printf("%lx\n", cur_dmac);
 
 		// if(i % 2)
         // 	handler_attr.host_stub_func = flexio_pp_dev_31;
@@ -254,6 +257,16 @@ int main(int argc, char **argv)
 			err = -1;
 			goto cleanup;
 		}
+		
+		// RX_TX
+		thd_ctx[i].queues->rq_tir_obj = flexio_rq_get_tir(thd_ctx[i].queues->flexio_rq_ptr);
+		if (thd_ctx[i].queues->rq_tir_obj == NULL) {
+			printf("Fail creating rq_tir_obj (errno %d)\n", errno);
+			goto cleanup;
+		}
+		thd_ctx[i].queues->rx_flow_rule = create_rule_rx_mac_match(app_ctx.rx_matcher, thd_ctx[i].queues->rq_tir_obj, cur_dmac);	
+		thd_ctx[i].queues->tx_flow_rule = create_rule_tx_fwd_to_sws_table(app_ctx.tx_matcher, cur_dmac);
+		thd_ctx[i].queues->tx_flow_rule2 = create_rule_tx_fwd_to_vport(app_ctx.tx_matcher, cur_dmac);
 
 		if (copy_thd_data_to_dpa(&app_ctx, &(thd_ctx[i]), buffer_location, use_copy)) {
 			printf("Failed to copy application data to DPA.\n");
@@ -293,7 +306,7 @@ cleanup:
 	}
 
 	for (size_t i = 0; i < scheduler_num; i++) { 
-		for (size_t j = 0; j < threads_num_per_scheduler; j++) { 
+		for (size_t j = 0; j < tenants_num; j++) { 
 			/* Clean up rx rule if created */
 			if (sch_ctx[i].queues[j].rx_flow_rule) {
 				if (destroy_rule(sch_ctx[i].queues[j].rx_flow_rule)) {

@@ -147,12 +147,41 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 //   *cycles_inside = __dpa_thread_cycles() - *cycles_inside;
 // }
 
+static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct flexio_dpa_dev_queue *tenant, uint16_t mac_index, uint8_t restricted) {
+	struct flexio_dev_wqe_rcv_data_seg *rwqe;
+	uint32_t rq_wqe_idx;
+	char *rq_data;
+	union flexio_dev_sqe_seg *swqe;
+	uint32_t data_sz;
+
+	rq_wqe_idx = be16_to_cpu((volatile __be16)tenant->rq_cq_ctx.cqe->wqe_counter);
+	data_sz = be32_to_cpu((volatile __be32)tenant->rq_cq_ctx.cqe->byte_cnt);
+
+	rwqe = &(tenant->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
+	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+
+	if (!restricted) {
+		save_set_dstmac(rq_data, mac_index);
+
+		swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
+		tenant->sq_ctx.sq_wqe_seg_idx += 4;
+		flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->rq_lkey, (uint64_t)rq_data);
+
+		__dpa_thread_memory_writeback();
+		flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
+	}
+	
+	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
+	com_step_cq(&(tenant->rq_cq_ctx));
+}
+
 flexio_dev_event_handler_t flexio_scheduler_handle;
 __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	struct host2dev_packet_processor_data_sch *data_from_host = (void *)thread_arg;
 	struct flexio_dev_thread_ctx *dtctx;
 	int i = data_from_host->sch_id;
 	size_t tenants_num = data_from_host->tenants_num;
+	size_t threads_num_per_scheduler = data_from_host->threads_num_per_scheduler;
 	struct dpa_sche_context *this_sch_ctx = &(dpa_schs_ctx[i]);
 
 	flexio_dev_get_thread_ctx(&dtctx);
@@ -167,15 +196,15 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		flexio_dev_print("sch running ... \n");
 	}
 
-	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
-		uint32_t thd_id = i * data_from_host->num_queues + j;
-		if (__atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE) ==EU_OFF &&
-			dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number) {
-			flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
-			flexio_dev_print("sch %d sent msix for thd %d, cq_num %u\n", i, thd_id,
-							dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
-		}
-	}
+	// for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
+	// 	uint32_t thd_id = i * data_from_host->num_queues + j;
+	// 	if (__atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE) ==EU_OFF &&
+	// 		dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number) {
+	// 		flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
+	// 		flexio_dev_print("sch %d sent msix for thd %d, cq_num %u\n", i, thd_id,
+	// 						dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
+	// 	}
+	// }
 
 	size_t time_interval = 15;
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
@@ -194,26 +223,28 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELEASE);
 		__atomic_store_n(&this_sch_ctx->busy_cycle[t], 0, __ATOMIC_RELEASE);
 	}
-	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
-		uint32_t thd_id = i * data_from_host->num_queues + j;
-		this_tenant = &(this_sch_ctx->queues[j]);
-		offload_info[thd_id].tenant = this_tenant;
+
+	for (uint32_t j = 0; j < threads_num_per_scheduler; j++) {
+		uint32_t thd_id = i * threads_num_per_scheduler + j;
 		offload_info[thd_id].sch_ctx = this_sch_ctx;
-		__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
 	}
+
+	uint32_t rr_idx[MAX_TENANT_NUM] = {0};
 
 	size_t now_cycle = __dpa_thread_cycles();
 	while (now_cycle < reschedule_cycle) {
 
-		for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
-			uint32_t thd_id = i * data_from_host->num_queues + j;
-			eu_status current_status = __atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE);
-
-			if (current_status == EU_OFF) {
-				flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
-				__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
-			} else if (current_status == EU_FREE) {
-				__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
+		for (uint32_t t = 0; t < tenants_num; t++) {
+			this_tenant = &(this_sch_ctx->queues[t]);
+			uint8_t restricted = __atomic_load_n(&this_sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE);
+			
+			int pkt_lmt = 64;
+			while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit && pkt_lmt > 0) {
+				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
+				uint16_t mac_index = scheduler_num * tenants_num + worker_i;
+				forward_packet(dtctx, this_tenant, mac_index, restricted);
+				rr_idx[t]++;
+				pkt_lmt--;
 			}
 		}
 
@@ -235,9 +266,6 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		
 		now_cycle = __dpa_thread_cycles();
 		if (now_cycle >= next_sched_cycle) {
-// #if report_cycle_usage
-			
-// #endif
 			for (uint32_t t = 0; t < tenants_num; t++) {
 				size_t total_thd_cycles = __atomic_exchange_n(&this_sch_ctx->busy_cycle[t], 0, __ATOMIC_ACQ_REL);
 				__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELEASE);
@@ -264,62 +292,59 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	__dpa_thread_memory_writeback();
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
-		struct flexio_dpa_dev_queue *this_tenant = &(this_sch_ctx->queues[j]);
-		flexio_dev_cq_arm(dtctx, this_tenant->rq_cq_ctx.cq_idx, this_tenant->rq_cq_ctx.cq_number);
+		struct flexio_dpa_dev_queue *tenant = &(this_sch_ctx->queues[j]);
+		flexio_dev_cq_arm(dtctx, tenant->rq_cq_ctx.cq_idx, tenant->rq_cq_ctx.cq_number);
 	}
 	flexio_dev_thread_reschedule();
 }
 
 /*
         size_t time_interval = 15;
-        register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval
-   * DPA_FREQ_HZ; register size_t cycle_interval_deficit = 1800000; // 1ms
-        register size_t defict_update_cycle = __dpa_thread_cycles() +
-   cycle_interval_deficit; register size_t pkt_lmt = 0; uint32_t data_sz = 0;
+        register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ; 
+		register size_t cycle_interval_deficit = 1800000; // 1ms
+        register size_t defict_update_cycle = __dpa_thread_cycles() + cycle_interval_deficit; 
+		register size_t pkt_lmt = 0; 
+		uint32_t data_sz = 0;
         size_t cycles_inside = 0;
 
         if (!data_from_host->not_first_run){
-                for (uint32_t j = 0; j < data_from_host->num_queues; j++){
-                        this_sch_ctx->thrput_deficit[j] += thrput_weights[j] *
-   thrput_quantum;
-                }
+            for (uint32_t j = 0; j < data_from_host->num_queues; j++){
+                this_sch_ctx->thrput_deficit[j] += thrput_weights[j] * thrput_quantum;
+            }
         }
 
         while (dtctx != NULL) {
-                struct flexio_dpa_dev_queue* this_tenant = NULL;
-                for (uint32_t j = 0; j < data_from_host->num_queues; j++){
-                        this_tenant = &(this_sch_ctx->queues[j]);
-                        pkt_lmt = 1 << 9; // queue size * 4, 512 packets once,
-   512000 cycles approximately. while (
-                                // this_sch_ctx->n_packet[j] > 0 &&
-                                this_sch_ctx->thrput_deficit[j] > 0 &&
-                                flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe)
-   != this_tenant->rq_cq_ctx.cq_hw_owner_bit && pkt_lmt > 0) {
-                                forward_packet(dtctx, this_tenant, &data_sz,
-   &cycles_inside);
+			struct flexio_dpa_dev_queue* this_tenant = NULL;
+			for (uint32_t j = 0; j < data_from_host->num_queues; j++){
+				this_tenant = &(this_sch_ctx->queues[j]);
+				pkt_lmt = 1 << 9; // queue size * 4, 512 packets once, 512000 cycles approximately. 
+				while (
+					// this_sch_ctx->n_packet[j] > 0 &&
+					this_sch_ctx->thrput_deficit[j] > 0 &&
+					flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe)!= this_tenant->rq_cq_ctx.cq_hw_owner_bit && pkt_lmt > 0) {
+					forward_packet(dtctx, this_tenant, &data_sz, &cycles_inside);
 
-                                pkt_lmt--;
-                                this_sch_ctx->thrput_deficit[j] -= data_sz;
-                                // this_sch_ctx->n_packet[j] --;
-                        }
-                }
-                size_t cycle_now = __dpa_thread_cycles();
-                if (cycle_now >= defict_update_cycle){
-                        defict_update_cycle = cycle_now +
-   cycle_interval_deficit; for (uint32_t j = 0; j < data_from_host->num_queues;
-   j++){ this_sch_ctx->thrput_deficit[j] = thrput_weights[j] * thrput_quantum;
-                                this_sch_ctx->n_packet[j] = q_packet;
-                        }
-                }
-                if (cycle_now >= reschedule_cycle) {
-                        __dpa_thread_memory_writeback();
-                        for (uint32_t j = 0; j < data_from_host->num_queues;
-   j++){ struct flexio_dpa_dev_queue* this_tenant = &(this_sch_ctx->queues[j]);
-                                flexio_dev_cq_arm(dtctx,
-   this_tenant->rq_cq_ctx.cq_idx, this_tenant->rq_cq_ctx.cq_number);
-                        }
-                        flexio_dev_print("sch %d rescheduled, cycles: %zu\n", i,
-   cycles_inside); flexio_dev_thread_reschedule();
-                }
+					pkt_lmt--;
+					this_sch_ctx->thrput_deficit[j] -= data_sz;
+					// this_sch_ctx->n_packet[j] --;
+				}
+			}
+			size_t cycle_now = __dpa_thread_cycles();
+			if (cycle_now >= defict_update_cycle){
+				defict_update_cycle = cycle_now + cycle_interval_deficit; 
+				for (uint32_t j = 0; j < data_from_host->num_queues; j++){
+					this_sch_ctx->thrput_deficit[j] = thrput_weights[j] * thrput_quantum;
+					this_sch_ctx->n_packet[j] = q_packet;
+				}
+			}
+			if (cycle_now >= reschedule_cycle) {
+				__dpa_thread_memory_writeback();
+				for (uint32_t j = 0; j < data_from_host->num_queues; j++){
+					struct flexio_dpa_dev_queue* this_tenant = &(this_sch_ctx->queues[j]);
+					flexio_dev_cq_arm(dtctx, this_tenant->rq_cq_ctx.cq_idx, this_tenant->rq_cq_ctx.cq_number);
+				}
+				flexio_dev_print("sch %d rescheduled, cycles: %zu\n", i, cycles_inside);
+				flexio_dev_thread_reschedule();
+			}
         }
 */

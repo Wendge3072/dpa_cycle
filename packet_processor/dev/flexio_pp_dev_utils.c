@@ -9,7 +9,7 @@ struct offload_dispatch_info offload_info[190];
 size_t check[2];
 
 
-int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx __unused, struct flexio_dpa_dev_queue* tenant, int thd_id, uint32_t *result)
+int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx, int thd_id, uint32_t *result)
 {
 	/* RX packet handling variables */
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
@@ -25,43 +25,32 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	uint32_t data_sz;
 
 	/* Extract relevant data from the CQE */
-	rq_wqe_idx = be16_to_cpu((volatile __be16)tenant->rq_cq_ctx.cqe->wqe_counter);
-	data_sz = be32_to_cpu((volatile __be32)tenant->rq_cq_ctx.cqe->byte_cnt);
+	rq_wqe_idx = be16_to_cpu((volatile __be16)this_thd_ctx->rq_cq_ctx.cqe->wqe_counter);
+	data_sz = be32_to_cpu((volatile __be32)this_thd_ctx->rq_cq_ctx.cqe->byte_cnt);
 
 	/* Get the RQ WQE pointed to by the CQE */
-	rwqe = &(tenant->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
+	rwqe = &(this_thd_ctx->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 
 	/* Extract data (whole packet) pointed to by the RQ WQE */
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
 	uint32_t tenant_indicator = *(uint32_t *)(rq_data + 46);
 	int tenant_id = (tenant_indicator == 0) ? 0 : 1;
-	struct dpa_sche_context* sch_ctx = offload_info[thd_id].sch_ctx;
 
-	if (__atomic_load_n(&sch_ctx->restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
-		// __dpa_thread_memory_writeback();
-		flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-		com_step_cq(&(tenant->rq_cq_ctx));
-		// __atomic_fetch_add(&offload_info[thd_id].restrict_pkts[tenant_id], 1, __ATOMIC_RELAXED);
-		// *result = 0;
-		// return tenant_id;
-		return -1;
-	}
-
-	swap_mac(rq_data);
+	get_swap_mac(rq_data);
 
 	// volatile uint_test checksum = calculate_checksum_nrnd(rq_data, data_sz / 4, 1);
 	// *result = calculate_checksum_nrnd(rq_data + 42, (data_sz - 42) / 4, 1);
 
-	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
-	tenant->sq_ctx.sq_wqe_seg_idx += 4;
-	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->rq_lkey, (uint64_t)rq_data);
+	swqe = &(this_thd_ctx->sq_ctx.sq_ring[(this_thd_ctx->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
+	this_thd_ctx->sq_ctx.sq_wqe_seg_idx += 4;
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, this_thd_ctx->rq_lkey, (uint64_t)rq_data);
 	
 	/* Ring DB */
 	__dpa_thread_memory_writeback();
-	flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
-	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-	com_step_cq(&(tenant->rq_cq_ctx));
+	flexio_dev_qp_sq_ring_db(dtctx, ++this_thd_ctx->sq_ctx.sq_pi, this_thd_ctx->sq_ctx.sq_number);
+	flexio_dev_dbr_rq_inc_pi(this_thd_ctx->rq_ctx.rq_dbr);
+	com_step_cq(&(this_thd_ctx->rq_cq_ctx));
 
 	return tenant_id;
 }
