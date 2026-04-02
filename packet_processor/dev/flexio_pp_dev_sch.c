@@ -288,6 +288,9 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	uint32_t rr_idx[MAX_TENANT_NUM] = {0};
 	register size_t current_used;
+	uint64_t sch_stat_pkt_cnt = 0;
+	uint64_t sch_stat_start_cycle = 0;
+	uint64_t sch_stat_busy_cycles = 0;
 	uint64_t prev_sch_rq_seen[MAX_TENANT_NUM] = {0};
 	uint64_t prev_sch_push_ok[MAX_TENANT_NUM] = {0};
 	uint64_t prev_sch_drop_restricted[MAX_TENANT_NUM] = {0};
@@ -334,7 +337,33 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				}
 #endif
 				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
+				uint64_t sch_pkt_start_cycle = __dpa_thread_cycles();
+				if (sch_stat_pkt_cnt == 0) {
+					sch_stat_start_cycle = sch_pkt_start_cycle;
+					sch_stat_busy_cycles = 0;
+				}
 				forward_packet(dtctx, this_sch_ctx, this_tenant, t, restricted, worker_i);
+				sch_stat_busy_cycles += (__dpa_thread_cycles() - sch_pkt_start_cycle);
+				sch_stat_pkt_cnt++;
+				if (sch_stat_pkt_cnt >= 1000000) {
+					uint64_t sch_stat_end_cycle = __dpa_thread_cycles();
+					uint64_t sch_total_cycles = sch_stat_end_cycle - sch_stat_start_cycle;
+					uint64_t sch_busy_cycles = sch_stat_busy_cycles;
+					uint64_t sch_wait_cycles = (sch_total_cycles > sch_busy_cycles) ? (sch_total_cycles - sch_busy_cycles) : 0;
+					uint64_t sch_avg_total = sch_total_cycles / sch_stat_pkt_cnt;
+					uint64_t sch_avg_busy = sch_busy_cycles / sch_stat_pkt_cnt;
+					uint64_t sch_avg_wait = sch_wait_cycles / sch_stat_pkt_cnt;
+
+					flexio_dev_print("sch %d 1M pkt cycle report: total %llu busy %llu wait %llu avg(total/busy/wait) %llu/%llu/%llu\n",
+						i,
+						(unsigned long long)sch_total_cycles,
+						(unsigned long long)sch_busy_cycles,
+						(unsigned long long)sch_wait_cycles,
+						(unsigned long long)sch_avg_total,
+						(unsigned long long)sch_avg_busy,
+						(unsigned long long)sch_avg_wait);
+					sch_stat_pkt_cnt = 0;
+				}
 #if report_pkt_usage
 				if (restricted) sec_drop_pkts[t]++;
 				else sec_fwd_pkts[t]++;

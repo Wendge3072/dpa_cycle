@@ -24,6 +24,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 
 	register size_t pkt_count = 0;
 	register size_t cycle_delta;
+	uint64_t stat_start_cycle = 0;
+	uint64_t stat_busy_cycles = 0;
 #if report_thread_pkt_usage
 	register size_t t0_pkt_count = 0, t0_cycle_sum = 0, t0_result_sum = 0;
 	register size_t t1_pkt_count = 0, t1_cycle_sum = 0, t1_result_sum = 0;
@@ -36,11 +38,16 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 		int pkt_lmt = 64;
 		while (fifo_pop(&this_thd_ctx->fifo, &pkt) == 0 && pkt_lmt > 0) {
 			cycle_delta = __dpa_thread_cycles();
+			if (pkt_count == 0) {
+				stat_start_cycle = cycle_delta;
+				stat_busy_cycles = 0;
+			}
 			uint32_t t_id = pkt.tnt_id;
 			
 			worker_pp_queue(dtctx, this_thd_ctx, i, &pkt, &result);
 			
 			cycle_delta = __dpa_thread_cycles() - cycle_delta;
+			stat_busy_cycles += cycle_delta;
 #if CHECK_BUDGET_AT_WORKER
 			size_t current_used = __atomic_add_fetch(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
 			if (current_used >= offload_info[i].sch_ctx->tenant_cycle_target[t_id]) {
@@ -65,6 +72,22 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 		
 		/* Periodic reschedule after 1000000 packets */
 		if (pkt_count >= 1000000) {
+			uint64_t stat_end_cycle = __dpa_thread_cycles();
+			uint64_t total_cycles = stat_end_cycle - stat_start_cycle;
+			uint64_t busy_cycles = stat_busy_cycles;
+			uint64_t wait_cycles = (total_cycles > busy_cycles) ? (total_cycles - busy_cycles) : 0;
+			uint64_t avg_total_cycles = total_cycles / pkt_count;
+			uint64_t avg_busy_cycles = busy_cycles / pkt_count;
+			uint64_t avg_wait_cycles = wait_cycles / pkt_count;
+			flexio_dev_print("thd %d 1M pkt cycle report: total %llu busy %llu wait %llu avg(total/busy/wait) %llu/%llu/%llu\n",
+				i,
+				(unsigned long long)total_cycles,
+				(unsigned long long)busy_cycles,
+				(unsigned long long)wait_cycles,
+				(unsigned long long)avg_total_cycles,
+				(unsigned long long)avg_busy_cycles,
+				(unsigned long long)avg_wait_cycles);
+
 			pkt_count = 0;
 #if report_thread_pkt_usage
 			if (t0_pkt_count != 0 && t1_pkt_count != 0) {
