@@ -243,6 +243,9 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 #if !CHECK_BUDGET_AT_WORKER
 				size_t current_used = __atomic_load_n(&this_sch_ctx->busy_cycle[t], __ATOMIC_ACQUIRE);
 				if (current_used >= this_sch_ctx->tenant_cycle_target[t]) {
+					if(t == 0){
+						flexio_dev_print("bugbugbugbug\n");
+					}
 					__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELEASE);
 					restricted = 1;
 				}
