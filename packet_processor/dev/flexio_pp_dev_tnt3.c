@@ -5,11 +5,12 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 {	
 	struct host2dev_packet_processor_data_thd *data_from_host = (void *)thread_arg;
 	int i = data_from_host->thd_id;
+	flexio_dev_print("thread id: %d\n", i);
 
 	struct flexio_dev_thread_ctx *dtctx;	
 	struct dpa_thread_context* this_thd_ctx = &(dpa_thds_ctx[i]);
 	flexio_dev_get_thread_ctx(&dtctx);
-	com_step_cq(&(this_thd_ctx->rq_cq_ctx));
+	// com_step_cq(&(this_thd_ctx->rq_cq_ctx));
 
 	if(!data_from_host->not_first_run){
 		data_from_host->not_first_run = 1;
