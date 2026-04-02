@@ -179,33 +179,77 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 // }
 
 static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_sche_context *sch_ctx,
-	struct flexio_dpa_dev_queue *tenant, uint32_t tnt_id, uint8_t restricted, uint32_t worker_i) {
+	struct flexio_dpa_dev_queue *tenant, uint32_t tnt_id, uint8_t restricted, uint32_t worker_i,
+	uint64_t *step_total_cycles, uint64_t *step_extract_cycles, uint64_t *step_alloc_cycles,
+	uint64_t *step_fifo_cycles, uint64_t *step_rq_cycles, uint32_t *step_alloc_called,
+	uint32_t *step_fifo_called, uint32_t *step_restricted) {
 #if !report_balance_usage
 	(void)sch_ctx;
+#endif
+#if !report_sch_fwd_avg_1m
+	(void)step_total_cycles;
+	(void)step_extract_cycles;
+	(void)step_alloc_cycles;
+	(void)step_fifo_cycles;
+	(void)step_rq_cycles;
+	(void)step_alloc_called;
+	(void)step_fifo_called;
+	(void)step_restricted;
 #endif
 	
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
 	uint32_t rq_wqe_idx;
 	char *rq_data;
 	uint32_t data_sz;
+#if report_sch_fwd_avg_1m
+	uint64_t t_total_start = __dpa_thread_cycles();
+	uint64_t t_step_start;
+	uint64_t t_step_end;
+
+	*step_total_cycles = 0;
+	*step_extract_cycles = 0;
+	*step_alloc_cycles = 0;
+	*step_fifo_cycles = 0;
+	*step_rq_cycles = 0;
+	*step_alloc_called = 0;
+	*step_fifo_called = 0;
+	*step_restricted = 0;
+
+	t_step_start = t_total_start;
+#endif
 
 	rq_wqe_idx = be16_to_cpu((volatile __be16)tenant->rq_cq_ctx.cqe->wqe_counter);
 	data_sz = be32_to_cpu((volatile __be32)tenant->rq_cq_ctx.cqe->byte_cnt);
 
 	rwqe = &(tenant->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+#if report_sch_fwd_avg_1m
+	t_step_end = __dpa_thread_cycles();
+	*step_extract_cycles = t_step_end - t_step_start;
+#endif
 #if report_balance_usage
 	sch_ctx->sch_rq_seen[tnt_id]++;
 #endif
 
 	void *new_rq_data = NULL;
 	if (restricted) {
+#if report_sch_fwd_avg_1m
+		*step_restricted = 1;
+#endif
 		new_rq_data = rq_data; // reuse buffer, effectively dropping
 #if report_balance_usage
 		sch_ctx->sch_drop_restricted[tnt_id]++;
 #endif
 	} else {
+#if report_sch_fwd_avg_1m
+		t_step_start = __dpa_thread_cycles();
+#endif
 		new_rq_data = mempool_alloc(&tenant->mempool);
+#if report_sch_fwd_avg_1m
+		t_step_end = __dpa_thread_cycles();
+		*step_alloc_cycles = t_step_end - t_step_start;
+		*step_alloc_called = 1;
+#endif
 		if (!new_rq_data) {
 			// flexio_dev_print("sch_id %d: Error, Mempool exhausted\n", sch_id);
 			new_rq_data = rq_data; // drop and reuse
@@ -214,6 +258,9 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_sche_
 #endif
 		} else {
 			struct fwd_pkt pkt;
+#if report_sch_fwd_avg_1m
+			t_step_start = __dpa_thread_cycles();
+#endif
 			pkt.rq_data = rq_data;
 			pkt.data_sz = data_sz;
 			pkt.rq_lkey = tenant->rq_lkey;
@@ -230,13 +277,26 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_sche_
 				sch_ctx->sch_push_ok[tnt_id]++;
 			}
 #endif
+#if report_sch_fwd_avg_1m
+			t_step_end = __dpa_thread_cycles();
+			*step_fifo_cycles = t_step_end - t_step_start;
+			*step_fifo_called = 1;
+#endif
 		}
 	}
 	
+#if report_sch_fwd_avg_1m
+	t_step_start = __dpa_thread_cycles();
+#endif
 	rwqe->addr = cpu_to_be64((uint64_t)new_rq_data);
 
 	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
 	com_step_cq(&(tenant->rq_cq_ctx));
+#if report_sch_fwd_avg_1m
+	t_step_end = __dpa_thread_cycles();
+	*step_rq_cycles = t_step_end - t_step_start;
+	*step_total_cycles = t_step_end - t_total_start;
+#endif
 }
 
 flexio_dev_event_handler_t flexio_scheduler_handle;
@@ -308,6 +368,13 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	uint64_t sch_stat_pkt_cnt = 0;
 	uint64_t sch_stat_start_cycle = 0;
 	uint64_t sch_stat_busy_cycles = 0;
+	uint64_t sch_stat_extract_cycles = 0;
+	uint64_t sch_stat_alloc_cycles = 0;
+	uint64_t sch_stat_fifo_cycles = 0;
+	uint64_t sch_stat_rq_cycles = 0;
+	uint64_t sch_stat_alloc_called = 0;
+	uint64_t sch_stat_fifo_called = 0;
+	uint64_t sch_stat_restricted = 0;
 #endif
 #if report_cycle_usage || report_pkt_usage
 	uint64_t prev_sch_rq_seen[MAX_TENANT_NUM] = {0};
@@ -357,16 +424,41 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 				}
 #endif
 				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
+				uint64_t step_total_cycles = 0;
+				uint64_t step_extract_cycles = 0;
+				uint64_t step_alloc_cycles = 0;
+				uint64_t step_fifo_cycles = 0;
+				uint64_t step_rq_cycles = 0;
+				uint32_t step_alloc_called = 0;
+				uint32_t step_fifo_called = 0;
+				uint32_t step_restricted = 0;
 #if report_sch_fwd_avg_1m
 				uint64_t sch_pkt_start_cycle = __dpa_thread_cycles();
 				if (sch_stat_pkt_cnt == 0) {
 					sch_stat_start_cycle = sch_pkt_start_cycle;
 					sch_stat_busy_cycles = 0;
+					sch_stat_extract_cycles = 0;
+					sch_stat_alloc_cycles = 0;
+					sch_stat_fifo_cycles = 0;
+					sch_stat_rq_cycles = 0;
+					sch_stat_alloc_called = 0;
+					sch_stat_fifo_called = 0;
+					sch_stat_restricted = 0;
 				}
 #endif
-				forward_packet(dtctx, this_sch_ctx, this_tenant, t, restricted, worker_i);
+				forward_packet(dtctx, this_sch_ctx, this_tenant, t, restricted, worker_i,
+					&step_total_cycles, &step_extract_cycles, &step_alloc_cycles,
+					&step_fifo_cycles, &step_rq_cycles, &step_alloc_called,
+					&step_fifo_called, &step_restricted);
 #if report_sch_fwd_avg_1m
-				sch_stat_busy_cycles += (__dpa_thread_cycles() - sch_pkt_start_cycle);
+				sch_stat_busy_cycles += step_total_cycles;
+				sch_stat_extract_cycles += step_extract_cycles;
+				sch_stat_alloc_cycles += step_alloc_cycles;
+				sch_stat_fifo_cycles += step_fifo_cycles;
+				sch_stat_rq_cycles += step_rq_cycles;
+				sch_stat_alloc_called += step_alloc_called;
+				sch_stat_fifo_called += step_fifo_called;
+				sch_stat_restricted += step_restricted;
 				sch_stat_pkt_cnt++;
 				if (sch_stat_pkt_cnt >= 1000000) {
 					uint64_t sch_stat_end_cycle = __dpa_thread_cycles();
@@ -374,12 +466,29 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 					uint64_t sch_busy_cycles = sch_stat_busy_cycles;
 					uint64_t sch_avg_fwd = sch_busy_cycles / sch_stat_pkt_cnt;
 					uint64_t sch_avg_total = sch_total_cycles / sch_stat_pkt_cnt;
+					uint64_t sch_avg_extract = sch_stat_extract_cycles / sch_stat_pkt_cnt;
+					uint64_t sch_avg_alloc = sch_stat_alloc_cycles / sch_stat_pkt_cnt;
+					uint64_t sch_avg_fifo = sch_stat_fifo_cycles / sch_stat_pkt_cnt;
+					uint64_t sch_avg_rq = sch_stat_rq_cycles / sch_stat_pkt_cnt;
+					uint64_t sch_avg_alloc_hit = sch_stat_alloc_called ? (sch_stat_alloc_cycles / sch_stat_alloc_called) : 0;
+					uint64_t sch_avg_fifo_hit = sch_stat_fifo_called ? (sch_stat_fifo_cycles / sch_stat_fifo_called) : 0;
 
-					flexio_dev_print("sch %d 1M fwd cycle report: pkts %llu avg_fwd %llu avg_total %llu total_fwd %llu\n",
+					flexio_dev_print("sch %d 1M fwd cycle report: pkts %llu avg_fwd %llu avg_total %llu avg_step(extract/alloc/fifo/rq) %llu/%llu/%llu/%llu\n",
 						i,
 						(unsigned long long)sch_stat_pkt_cnt,
 						(unsigned long long)sch_avg_fwd,
 						(unsigned long long)sch_avg_total,
+						(unsigned long long)sch_avg_extract,
+						(unsigned long long)sch_avg_alloc,
+						(unsigned long long)sch_avg_fifo,
+						(unsigned long long)sch_avg_rq);
+					flexio_dev_print("sch %d 1M fwd path report: alloc_called %llu fifo_called %llu restricted %llu avg_hit(alloc/fifo) %llu/%llu total_fwd %llu\n",
+						i,
+						(unsigned long long)sch_stat_alloc_called,
+						(unsigned long long)sch_stat_fifo_called,
+						(unsigned long long)sch_stat_restricted,
+						(unsigned long long)sch_avg_alloc_hit,
+						(unsigned long long)sch_avg_fifo_hit,
 						(unsigned long long)sch_busy_cycles);
 					sch_stat_pkt_cnt = 0;
 				}

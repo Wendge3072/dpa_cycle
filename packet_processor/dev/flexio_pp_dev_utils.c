@@ -144,7 +144,7 @@ int worker_pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_conte
 		return 1;
 	}
 
-	get_swap_mac(pkt->rq_data);
+	swap_mac(pkt->rq_data);
 
 	union flexio_dev_sqe_seg *swqe;
 	swqe = &(this_thd_ctx->sq_ctx.sq_ring[(this_thd_ctx->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
