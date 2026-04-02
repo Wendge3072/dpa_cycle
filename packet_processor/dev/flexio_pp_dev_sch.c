@@ -230,6 +230,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	}
 
 	uint32_t rr_idx[MAX_TENANT_NUM] = {0};
+	register size_t current_used;
 
 	size_t now_cycle = __dpa_thread_cycles();
 	while (now_cycle < reschedule_cycle) {
@@ -241,13 +242,15 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			int pkt_lmt = 64;
 			while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit && pkt_lmt > 0) {
 #if !CHECK_BUDGET_AT_WORKER
-				size_t current_used = __atomic_load_n(&this_sch_ctx->busy_cycle[t], __ATOMIC_ACQUIRE);
-				if (current_used >= this_sch_ctx->tenant_cycle_target[t]) {
-					if(t == 0){
-						flexio_dev_print("bugbugbugbug\n");
+				if (!restricted){
+					current_used = __atomic_load_n(&this_sch_ctx->busy_cycle[t], __ATOMIC_ACQUIRE);
+					if (current_used >= this_sch_ctx->tenant_cycle_target[t]) {
+						if(t == 0){
+							flexio_dev_print("bugbugbugbug\n");
+						}
+						__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELEASE);
+						restricted = 1;
 					}
-					__atomic_store_n(&this_sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELEASE);
-					restricted = 1;
 				}
 #endif
 				uint32_t worker_i = i * threads_num_per_scheduler + (rr_idx[t] % threads_num_per_scheduler);
