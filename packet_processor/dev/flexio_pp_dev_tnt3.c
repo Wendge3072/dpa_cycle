@@ -5,7 +5,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 {	
 	struct host2dev_packet_processor_data_thd *data_from_host = (void *)thread_arg;
 	int i = data_from_host->thd_id;
-	flexio_dev_print("thread id: %d\n", i);
+	// flexio_dev_print("thread id: %d\n", i);
 
 	struct flexio_dev_thread_ctx *dtctx;	
 	struct dpa_thread_context* this_thd_ctx = &(dpa_thds_ctx[i]);
