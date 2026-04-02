@@ -229,15 +229,15 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		flexio_dev_print("sch running ... \n");
 	}
 
-	// for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
-	// 	uint32_t thd_id = i * data_from_host->num_queues + j;
-	// 	if (__atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE) ==EU_OFF &&
-	// 		dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number) {
-	// 		flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
-	// 		flexio_dev_print("sch %d sent msix for thd %d, cq_num %u\n", i, thd_id,
-	// 						dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
-	// 	}
-	// }
+	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
+		uint32_t thd_id = i * data_from_host->num_queues + j;
+		if (__atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE) ==EU_OFF &&
+			dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number) {
+			flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
+			flexio_dev_print("sch %d sent msix for thd %d, cq_num %u\n", i, thd_id,
+							dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
+		}
+	}
 
 	size_t time_interval = 15;
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
