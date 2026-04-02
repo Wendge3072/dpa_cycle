@@ -51,7 +51,7 @@ void save_set_dstmac(char* packet, uint16_t mac_index)
 {
 	register uint64_t dst_mac = *((uint64_t *)packet);
 	*((uint64_t *)(packet + 64)) = dst_mac;
-	dst_mac = (dst_mac & mask) | (zero_mac + ((uint64_t)mac_index << 40));
+	dst_mac = (dst_mac & ~mask) | (zero_mac + ((uint64_t)mac_index << 40));
 	*((uint64_t *)packet) = dst_mac;
 }
 
