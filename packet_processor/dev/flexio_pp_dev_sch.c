@@ -168,7 +168,9 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 //   *cycles_inside = __dpa_thread_cycles() - *cycles_inside;
 // }
 
-static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, struct flexio_dpa_dev_queue *tenant, uint32_t tnt_id, uint8_t restricted, uint32_t worker_i) {
+static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, struct flexio_dpa_dev_queue *tenant, 
+	uint32_t tnt_id, uint8_t restricted, uint32_t worker_i) {
+	
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
 	uint32_t rq_wqe_idx;
 	char *rq_data;
