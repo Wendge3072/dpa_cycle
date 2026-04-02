@@ -277,6 +277,21 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	size_t now_cycle = __dpa_thread_cycles();
 	while (now_cycle < reschedule_cycle) {
 
+		/* Poll thread status and trigger thread start when needed */
+		for (uint32_t j = 0; j < threads_num_per_scheduler; j++) {
+			uint32_t thd_id = i * threads_num_per_scheduler + j;
+			eu_status current_status = __atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE);
+
+			if (current_status == EU_OFF) {
+				/* Thread rescheduled, send msix to wake it up */
+				flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
+				__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
+			} else if (current_status == EU_FREE) {
+				/* Thread is ready, mark it as running */
+				__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
+			}
+		}
+
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			this_tenant = &(this_sch_ctx->queues[t]);
 			uint8_t restricted = __atomic_load_n(&this_sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE);

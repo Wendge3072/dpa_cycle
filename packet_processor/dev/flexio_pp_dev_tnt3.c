@@ -5,7 +5,11 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 {	
 	struct host2dev_packet_processor_data_thd *data_from_host = (void *)thread_arg;
 	int i = data_from_host->thd_id;
-	// flexio_dev_print("thread id: %d\n", i);
+
+	/* Initialize status: EU_OFF -> EU_FREE to signal scheduler */
+	if (__atomic_load_n(&offload_info[i].status, __ATOMIC_ACQUIRE) == EU_OFF){
+		__atomic_store_n(&offload_info[i].status, EU_FREE, __ATOMIC_RELEASE);
+	}
 
 	struct flexio_dev_thread_ctx *dtctx;	
 	struct dpa_thread_context* this_thd_ctx = &(dpa_thds_ctx[i]);
@@ -13,6 +17,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	com_step_cq(&(this_thd_ctx->rq_cq_ctx));
 
 	if(!data_from_host->not_first_run){
+		/* Wait for scheduler to start this thread (status == EU_HANG) */
+		spin_on_status(i, EU_HANG);
 		data_from_host->not_first_run = 1;
 	}
 
@@ -85,6 +91,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			pkt_lmt--;
 		}
 		
+		/* Periodic reschedule after 1000000 packets */
 		if (pkt_count >= 1000000) {
 			pkt_count = 0;
 #if report_thread_pkt_usage
@@ -95,11 +102,17 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				flexio_dev_print("--- tnt running ---, t0_pkt_count: %zu, t1_pkt_count: %zu\n", t0_pkt_count, t1_pkt_count);
 			}
 #endif
+			/* Set status to EU_OFF and reschedule, scheduler will restart us */
+			__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
+			__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+			flexio_dev_cq_arm(dtctx, this_thd_ctx->rq_cq_ctx.cq_idx, this_thd_ctx->rq_cq_ctx.cq_number);
+			flexio_dev_thread_reschedule();
+			return;
 		}
-		flexio_dev_thread_reschedule();
 	}
 
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	flexio_dev_cq_arm(dtctx, dpa_thds_ctx[i].rq_cq_ctx.cq_idx, dpa_thds_ctx[i].rq_cq_ctx.cq_number);
+	__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
 	flexio_dev_thread_reschedule();
 }
