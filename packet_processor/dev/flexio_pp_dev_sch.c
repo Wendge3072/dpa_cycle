@@ -186,7 +186,7 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, int sch_id, stru
 	} else {
 		new_rq_data = mempool_alloc(&tenant->mempool);
 		if (!new_rq_data) {
-			flexio_dev_print("sch_id %d: Error, Mempool exhausted\n", sch_id);
+			// flexio_dev_print("sch_id %d: Error, Mempool exhausted\n", sch_id);
 			new_rq_data = rq_data; // drop and reuse
 		} else {
 			struct fwd_pkt pkt;

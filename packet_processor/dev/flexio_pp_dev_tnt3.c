@@ -103,9 +103,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			}
 #endif
 			/* Set status to EU_OFF and reschedule, scheduler will restart us */
-			__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
 			__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 			flexio_dev_cq_arm(dtctx, this_thd_ctx->rq_cq_ctx.cq_idx, this_thd_ctx->rq_cq_ctx.cq_number);
+			__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
 			flexio_dev_thread_reschedule();
 			return;
 		}
