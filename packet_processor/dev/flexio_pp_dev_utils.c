@@ -193,7 +193,7 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	int tenant_id = (tenant_indicator == 0) ? 0 : 1;
 
 	// get_swap_mac(rq_data);
-	swap_mac(pkt->rq_data);
+	swap_mac(rq_data);
 
 	// if (tenant_id == 1) {
 	// 	*result = calculate_checksum_nrnd((uint_test*)rq_data, data_sz / 4, 5);
