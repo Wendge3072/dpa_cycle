@@ -45,10 +45,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			}
 			while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit &&
 			       pkt_lmt > 0) {
-				pkt_lmt--;
+				// pkt_lmt--;
 				if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
-					com_step_cq(&(this_tenant->rq_cq_ctx));
-					continue;
+					break;
 				}
 
 				cycle_delta = __dpa_thread_cycles();
@@ -76,7 +75,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				}
 #endif
 				pkt_count++;
-				// pkt_lmt--;
+				pkt_lmt--;
 
 				if (pkt_count >= 1000000) {
 					pkt_count = 0;
