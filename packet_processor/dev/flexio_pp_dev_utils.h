@@ -46,6 +46,10 @@ struct dpa_thread_context {
 	dt_ctx_t dt_ctx;        /* SQ Data ring */
 };
 
+#define sch_cycle_report 1
+#define sch_pkt_report 1
+#define wkr_pkt_report 0
+
 /* The structure of the sample DPA application contains global data that the application uses */
 struct dpa_sche_context {
 	/* Packet count - used for debug message */
@@ -99,10 +103,6 @@ extern struct offload_dispatch_info offload_info[190];
 #define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
 #define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
 #define SCHED_PERIOD_CYCLES_BUDGET SCHED_PERIOD_CYCLES_PERCENT * 81
-
-#define sch_cycle_report 1
-#define sch_pkt_report 1
-#define wkr_pkt_report 0
 
 static size_t scheduler_num;
 static uint32_t thrput_quantum = 15625;
