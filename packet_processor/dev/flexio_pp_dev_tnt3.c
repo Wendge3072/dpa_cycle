@@ -25,7 +25,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 		data_from_host->not_first_run = 1;
 	}
 	this_tenant_base = __atomic_load_n(&offload_info[i].tenant, __ATOMIC_RELAXED);
-	size_t tenants_num = offload_info[i].sch_ctx->tenants_num;
+	struct dpa_sche_context *sch_ctx = offload_info[i].sch_ctx;
+	size_t tenants_num = sch_ctx->tenants_num;
 
 	register size_t pkt_count = 0;
 	register size_t cycle_delta;
@@ -40,19 +41,19 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			struct flexio_dpa_dev_queue *this_tenant = &this_tenant_base[t];
 			int pkt_lmt = 1 << 8;
 
-			if (__atomic_load_n(&offload_info[i].sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
-				continue;
-			}
-
 			while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit &&
 			       pkt_lmt > 0) {
+				if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
+					break;
+				}
+
 				cycle_delta = __dpa_thread_cycles();
 				int t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i, (int)t, &result);
 				cycle_delta = __dpa_thread_cycles() - cycle_delta;
 				if (t_id >= 0) {
-					__atomic_fetch_add(&offload_info[i].sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
+					__atomic_fetch_add(&sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
 #if sch_pkt_report
-					__atomic_fetch_add(&offload_info[i].sch_ctx->busy_pkts[t_id], 1, __ATOMIC_RELAXED);
+					__atomic_fetch_add(&sch_ctx->busy_pkts[t_id], 1, __ATOMIC_RELAXED);
 #endif
 				}
 #if wkr_pkt_report
