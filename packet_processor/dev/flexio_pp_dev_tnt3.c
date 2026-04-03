@@ -47,6 +47,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			       pkt_lmt > 0) {
 				// pkt_lmt--;
 				if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
+					flexio_dev_print("tenant %d restricted during processing, break\n", t);
 					break;
 				}
 
