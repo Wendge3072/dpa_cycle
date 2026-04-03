@@ -75,7 +75,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				pkt_count++;
 				pkt_lmt--;
 
-				if (pkt_count >= 1000000) {
+				if (pkt_count >= 10000000) {
 					pkt_count = 0;
 #if wkr_pkt_report
 					if (t0_pkt_count != 0 && t1_pkt_count != 0) {
