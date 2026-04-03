@@ -46,9 +46,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit &&
 			       pkt_lmt > 0) {
 				// pkt_lmt--;
-				if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
+				if (__atomic_load_n(&sch_ctx->restrict_tenant[0], __ATOMIC_ACQUIRE)) {
 					flexio_dev_print("tenant %d restricted during processing, break\n", t);
-					break;
+					// break;
 				}
 
 				cycle_delta = __dpa_thread_cycles();
