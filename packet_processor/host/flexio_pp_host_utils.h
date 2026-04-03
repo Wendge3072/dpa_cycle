@@ -19,6 +19,15 @@
 /* Common header for communication between host and DPA. */
 #include "../flexio_pp_com.h"
 
+/*
+ * Worker thread private queue resources switch:
+ * 1: create/cleanup worker-private SQ and related flow-rule path.
+ * 0: disable worker-private SQ path and keep scheduler-managed queues only.
+ */
+#ifndef ENABLE_THREAD_PRIVATE_SQ_RULES
+#define ENABLE_THREAD_PRIVATE_SQ_RULES 1
+#endif
+
 struct flow_matcher {
 	struct mlx5dv_dr_domain *dr_domain;
 	struct mlx5dv_dr_table *dr_table_root;

@@ -55,6 +55,7 @@ struct dpa_sche_context {
 	uint32_t idx;
 	// Packet statistics for each round (1000000 packets per round)
 	uint64_t packet_stats_round;
+	size_t tenants_num;
 	struct flexio_dpa_dev_queue queues[MAX_SCHEDULER_QUEUES];
 	long long thrput_deficit[MAX_TENANT_NUM];
 	uint16_t n_packet [MAX_TENANT_NUM];
@@ -108,7 +109,8 @@ void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
 void process_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* tenant);
 
-int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx, struct flexio_dpa_dev_queue* tenant, int thd_id, uint32_t *result);
+int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx,
+	     struct flexio_dpa_dev_queue* tenant, int thd_id, int tenant_id, uint32_t *result);
 
 flexio_dev_rpc_handler_t thd_ctx_init;
 __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data);

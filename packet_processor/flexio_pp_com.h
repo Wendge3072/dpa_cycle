@@ -37,8 +37,12 @@
 #include <stdint.h>
 
 /* Scheduler configurations */
-#define MAX_SCHEDULER_QUEUES 16
+#define MAX_THREADS_PER_SCHEDULER 8
 #define MAX_TENANT_NUM 2
+#define MAX_SCHEDULER_QUEUES (MAX_THREADS_PER_SCHEDULER * MAX_TENANT_NUM)
+#if MAX_SCHEDULER_QUEUES != 16
+#error "MAX_SCHEDULER_QUEUES must be 16 (8 threads per scheduler x 2 tenants)."
+#endif
 #define DPA_FREQ_HZ 1800000000ULL  // 1.8GHz
 
 /* Every usage of this value is in bytes */

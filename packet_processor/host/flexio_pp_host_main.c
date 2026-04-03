@@ -22,12 +22,27 @@ int main(int argc, char **argv)
     if (argc > 3) {
         tenants_num = atoi(argv[3]);
     }
+	if (tenants_num == 0 || tenants_num > MAX_TENANT_NUM) {
+		printf("Invalid tenants_num=%zu, supported range is [1, %d]\n", tenants_num, MAX_TENANT_NUM);
+		return -1;
+	}
 
 	if (argc > 4) {
 		threads_num_per_scheduler = atoi(argv[4]);
 	}
+	if (threads_num_per_scheduler == 0 || threads_num_per_scheduler > MAX_THREADS_PER_SCHEDULER) {
+		printf("Invalid threads_num_per_scheduler=%zu, supported range is [1, %d]\n",
+		       threads_num_per_scheduler, MAX_THREADS_PER_SCHEDULER);
+		return -1;
+	}
 
 	threads_num = threads_num_per_scheduler * scheduler_num;
+	size_t queues_per_scheduler = threads_num_per_scheduler * tenants_num;
+	if (queues_per_scheduler > MAX_SCHEDULER_QUEUES) {
+		printf("Invalid config: queues_per_scheduler=%zu exceeds MAX_SCHEDULER_QUEUES=%d\n",
+		       queues_per_scheduler, MAX_SCHEDULER_QUEUES);
+		return -1;
+	}
 
 	if (argc > 5) {
         begin_thread = atoi(argv[5]);
@@ -71,12 +86,12 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	for (int i = 0; i < scheduler_num; i++) {
-		sch_ctx[i].queues = malloc(sizeof(struct flexio_queues) * threads_num_per_scheduler);
+		sch_ctx[i].queues = malloc(sizeof(struct flexio_queues) * queues_per_scheduler);
 		if (sch_ctx[i].queues == NULL) {
 			printf("malloc scheduler queue context failed\n");
 			return -1;
 		}
-		sch_ctx[i].num_queues = threads_num_per_scheduler;
+		sch_ctx[i].num_queues = queues_per_scheduler;
 	}
 
 	if (geteuid()) {
@@ -179,18 +194,21 @@ int main(int argc, char **argv)
 		}
 
 
-		for (int j = 0; j < threads_num_per_scheduler; j++) {
-			uint64_t cur_dmac = DMAC + i * threads_num_per_scheduler + j;
-			// uint64_t cur_dmac = DMAC + (uint64_t)(j * 2 + (i & 1));
+		for (size_t j = 0; j < threads_num_per_scheduler; j++) {
+			for (size_t t = 0; t < tenants_num; t++) {
+				size_t qidx = j * tenants_num + t;
+				uint64_t cur_dmac = DMAC + i * queues_per_scheduler + qidx;
+				// uint64_t cur_dmac = DMAC + (uint64_t)(j * 2 + (i & 1));
 
-			sch_ctx[i].queues[j].rq_tir_obj = flexio_rq_get_tir(sch_ctx[i].queues[j].flexio_rq_ptr);
-			if (sch_ctx[i].queues[j].rq_tir_obj == NULL) {
-				printf("Fail creating rq_tir_obj (errno %d)\n", errno);
-				goto cleanup;
+				sch_ctx[i].queues[qidx].rq_tir_obj = flexio_rq_get_tir(sch_ctx[i].queues[qidx].flexio_rq_ptr);
+				if (sch_ctx[i].queues[qidx].rq_tir_obj == NULL) {
+					printf("Fail creating rq_tir_obj (errno %d)\n", errno);
+					goto cleanup;
+				}
+				sch_ctx[i].queues[qidx].rx_flow_rule = create_rule_rx_mac_match(app_ctx.rx_matcher, sch_ctx[i].queues[qidx].rq_tir_obj, cur_dmac);
+				sch_ctx[i].queues[qidx].tx_flow_rule = create_rule_tx_fwd_to_sws_table(app_ctx.tx_matcher, cur_dmac);
+				sch_ctx[i].queues[qidx].tx_flow_rule2 = create_rule_tx_fwd_to_vport(app_ctx.tx_matcher, cur_dmac);
 			}
-			sch_ctx[i].queues[j].rx_flow_rule = create_rule_rx_mac_match(app_ctx.rx_matcher, sch_ctx[i].queues[j].rq_tir_obj, cur_dmac);
-			sch_ctx[i].queues[j].tx_flow_rule = create_rule_tx_fwd_to_sws_table(app_ctx.tx_matcher, cur_dmac);
-			sch_ctx[i].queues[j].tx_flow_rule2 = create_rule_tx_fwd_to_vport(app_ctx.tx_matcher, cur_dmac);
 		}
 
 		if (copy_sch_data_to_dpa(&app_ctx, &(sch_ctx[i]), buffer_location, use_copy)) {
@@ -249,11 +267,13 @@ int main(int argc, char **argv)
 			goto cleanup;
 		}
 
+#if ENABLE_THREAD_PRIVATE_SQ_RULES
 		if (create_app_sq(&(app_ctx), &(thd_ctx[i]), use_copy)) {
 			printf("Failed to create Flex SQ.\n");
 			err = -1;
 			goto cleanup;
 		}
+#endif
 
 		if (copy_thd_data_to_dpa(&app_ctx, &(thd_ctx[i]), buffer_location, use_copy)) {
 			printf("Failed to copy application data to DPA.\n");
@@ -293,7 +313,7 @@ cleanup:
 	}
 
 	for (size_t i = 0; i < scheduler_num; i++) { 
-		for (size_t j = 0; j < threads_num_per_scheduler; j++) { 
+		for (size_t j = 0; j < queues_per_scheduler; j++) {
 			/* Clean up rx rule if created */
 			if (sch_ctx[i].queues[j].rx_flow_rule) {
 				if (destroy_rule(sch_ctx[i].queues[j].rx_flow_rule)) {
@@ -313,24 +333,26 @@ cleanup:
 		}
 	}
 
-	for (size_t i = 0; i < threads_num; i++) { 
-        /* Clean up rx rule if created */
-        if (thd_ctx[i].queues->rx_flow_rule) {
-            if (destroy_rule(thd_ctx[i].queues->rx_flow_rule)) {
-                printf("Failed to destroy rx rule\n");
-            }
-        }
+#if ENABLE_THREAD_PRIVATE_SQ_RULES
+	for (size_t i = 0; i < threads_num; i++) {
+		/* Clean up rx rule if created */
+		if (thd_ctx[i].queues->rx_flow_rule) {
+			if (destroy_rule(thd_ctx[i].queues->rx_flow_rule)) {
+				printf("Failed to destroy rx rule\n");
+			}
+		}
 		if (thd_ctx[i].queues->tx_flow_rule) {
-            if (destroy_rule(thd_ctx[i].queues->tx_flow_rule)) {
-                printf("Failed to destroy tx rule\n");
-            }
-        }
+			if (destroy_rule(thd_ctx[i].queues->tx_flow_rule)) {
+				printf("Failed to destroy tx rule\n");
+			}
+		}
 		if (thd_ctx[i].queues->tx_flow_rule2) {
-            if (destroy_rule(thd_ctx[i].queues->tx_flow_rule2)) {
-                printf("Failed to destroy tx rule2\n");
-            }
-        }
-    }
+			if (destroy_rule(thd_ctx[i].queues->tx_flow_rule2)) {
+				printf("Failed to destroy tx rule2\n");
+			}
+		}
+	}
+#endif
 
     if (app_ctx.rx_matcher && destroy_matcher(app_ctx.rx_matcher)) {
         printf("Failed to destroy rx matcher\n");
@@ -342,16 +364,18 @@ cleanup:
 
 	for (size_t i = 0; i < threads_num; i++) {
 		/* Clean up previously allocated SQ */
+#if ENABLE_THREAD_PRIVATE_SQ_RULES
 		if (clean_up_app_sq(&app_ctx, &(thd_ctx[i]))) {
-            printf("Failed to destroy sq\n");
+			printf("Failed to destroy sq\n");
 		}
+#endif
 
 		/* Clean up previously allocated RQ */
 		if (clean_up_app_rq(&app_ctx, &(thd_ctx[i]))) {
-            printf("Failed to destroy cq\n");
+			printf("Failed to destroy cq\n");
 		}
 		if (thd_ctx[i].event_handler && flexio_event_handler_destroy(thd_ctx[i].event_handler)) {
-            printf("Failed to destroy event handler\n");
+			printf("Failed to destroy event handler\n");
 		}
 	}
 
