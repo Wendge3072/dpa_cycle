@@ -14,10 +14,14 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	struct dpa_thread_context* this_thd_ctx = &(dpa_thds_ctx[i]);
 	struct flexio_dpa_dev_queue* this_tenant_base;
 	flexio_dev_get_thread_ctx(&dtctx);
-	com_step_cq(&(this_thd_ctx->rq_cq_ctx));
 
-	if(!data_from_host->not_first_run){
-		spin_on_status(i, EU_HANG);
+	/*
+	 * Every wakeup after EU_OFF must be acknowledged before the worker starts
+	 * polling queues again. This keeps the scheduler/worker handshake stable
+	 * across repeated reschedules.
+	 */
+	spin_on_status(i, EU_HANG);
+	if (!data_from_host->not_first_run) {
 		data_from_host->not_first_run = 1;
 	}
 	this_tenant_base = __atomic_load_n(&offload_info[i].tenant, __ATOMIC_RELAXED);
@@ -83,10 +87,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 #endif
 					__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
 					__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-					for (uint32_t arm_t = 0; arm_t < tenants_num; arm_t++) {
-						struct flexio_dpa_dev_queue *arm_q = &this_tenant_base[arm_t];
-						flexio_dev_cq_arm(dtctx, arm_q->rq_cq_ctx.cq_idx, arm_q->rq_cq_ctx.cq_number);
-					}
+					flexio_dev_cq_arm(dtctx, this_thd_ctx->rq_cq_ctx.cq_idx, this_thd_ctx->rq_cq_ctx.cq_number);
 					flexio_dev_thread_reschedule();
 					return;
 				}
@@ -95,10 +96,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	}
 
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-	for (uint32_t arm_t = 0; arm_t < tenants_num; arm_t++) {
-		struct flexio_dpa_dev_queue *arm_q = &this_tenant_base[arm_t];
-		flexio_dev_cq_arm(dtctx, arm_q->rq_cq_ctx.cq_idx, arm_q->rq_cq_ctx.cq_number);
-	}
+	flexio_dev_cq_arm(dtctx, this_thd_ctx->rq_cq_ctx.cq_idx, this_thd_ctx->rq_cq_ctx.cq_number);
 	__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
 	flexio_dev_thread_reschedule();
 }

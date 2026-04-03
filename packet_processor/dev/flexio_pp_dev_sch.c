@@ -213,7 +213,6 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 			if (current_status == EU_OFF) {
 				flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
-				__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
 			} else if (current_status == EU_FREE) {
 				__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
 			}
@@ -258,7 +257,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			}
 			flexio_dev_print("sch %d 1s cycle report: tenant1 overload_budget %10zu\n", i,
 					 overload_budget / (reschedule ? reschedule : 1));
-			flexio_dev_print("sch %d 1s cycle report: reschedule %d\n", i, reschedule);
+			flexio_dev_print("sch %d 1s cycle report: tenant1_restrict_hits %d\n", i, reschedule);
 			overload_budget = 0,reschedule = 0;
 			next_report_cycle = now_cycle + DPA_FREQ_HZ;
 		}
