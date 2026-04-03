@@ -67,7 +67,7 @@ struct offload_dispatch_info {
 
 #define sch_cycle_report 0
 #define sch_pkt_report 0
-#define wkr_pkt_report 1
+#define wkr_pkt_report 0
 
 /* The structure of the sample DPA application contains global data that the application uses */
 struct dpa_sche_context {
