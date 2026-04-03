@@ -14,6 +14,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	struct dpa_thread_context* this_thd_ctx = &(dpa_thds_ctx[i]);
 	struct flexio_dpa_dev_queue* this_tenant_base;
 	flexio_dev_get_thread_ctx(&dtctx);
+	com_step_cq(&(this_thd_ctx->rq_cq_ctx));
 
 	if(!data_from_host->not_first_run){
 		spin_on_status(i, EU_HANG);
