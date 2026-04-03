@@ -40,7 +40,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			struct flexio_dpa_dev_queue *this_tenant = &this_tenant_base[t];
 			int pkt_lmt = 1 << 8;
-
+			if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
+				continue;
+			}
 			while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit &&
 			       pkt_lmt > 0) {
 				cycle_delta = __dpa_thread_cycles();
