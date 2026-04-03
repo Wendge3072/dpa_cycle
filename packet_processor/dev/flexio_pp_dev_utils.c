@@ -70,6 +70,7 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 	dpa_thds_ctx[i].rq_lkey = data_from_host->rq_transf.wqd_mkey_id;
 	dpa_thds_ctx[i].window_id = data_from_host->window_id;
 	dpa_thds_ctx[i].idx = i;
+	dpa_thds_ctx[i].next_tenant = 0;
 	/* Set context for RQ's CQ */
 	com_cq_ctx_init(&(dpa_thds_ctx[i].rq_cq_ctx),
 			data_from_host->rq_cq_transf.cq_num,
