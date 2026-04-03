@@ -1,6 +1,6 @@
 #include "flexio_pp_dev_utils.h"
 
-#define report_cycle_usage 0
+#define report_cycle_usage 1
 
 /* Initialize the app_ctx structure from the host data.
  *  data_from_host - pointer host2dev_packet_processor_data from host.
