@@ -52,9 +52,10 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 						// break;
 					// continue;
 				// }
-
+				int t_id;
 				cycle_delta = __dpa_thread_cycles();
-				int t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i, (int)t, &result);
+				if (!__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE))
+					t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i, (int)t, &result);
 				cycle_delta = __dpa_thread_cycles() - cycle_delta;
 				if (t_id >= 0) {
 					__atomic_fetch_add(&sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
