@@ -115,6 +115,8 @@ void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
 void process_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* tenant);
 
+int pp_queue_rq_cq_step(struct flexio_dpa_dev_queue* tenant);
+
 int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx,
 	     struct flexio_dpa_dev_queue* tenant, int thd_id, int tenant_id, uint32_t *result);
 
