@@ -33,7 +33,6 @@ struct dpa_thread_context {
 	int buffer_location;
 	uint32_t window_id;
 	uint32_t idx;
-	uint32_t next_tenant;
 	// NVMe related
 	flexio_uintptr_t host_buffer;
 	flexio_uintptr_t result;

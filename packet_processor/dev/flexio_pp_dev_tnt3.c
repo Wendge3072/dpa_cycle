@@ -28,7 +28,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	this_tenant_base = __atomic_load_n(&offload_info[i].tenant, __ATOMIC_RELAXED);
 	struct dpa_sche_context *sch_ctx = offload_info[i].sch_ctx;
 	size_t tenants_num = sch_ctx->tenants_num;
-	uint32_t start_tenant = tenants_num ? (this_thd_ctx->next_tenant % tenants_num) : 0;
 
 	register size_t pkt_count = 0;
 	register size_t cycle_delta;
@@ -41,11 +40,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 #endif
 	uint32_t result;
 	while (dtctx != NULL) {
-		for (uint32_t tenant_offset = 0; tenant_offset < tenants_num; tenant_offset++) {
-			uint32_t t = start_tenant + tenant_offset;
-			if (t >= tenants_num) {
-				t -= tenants_num;
-			}
+		for (uint32_t t = 0; t < tenants_num; t++) {
 			struct flexio_dpa_dev_queue *this_tenant = &this_tenant_base[t];
 			pkt_lmt = 1 << 8;
 			if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
@@ -82,9 +77,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 
 				if (pkt_count >= 1000000) {
 					pkt_count = 0;
-					if (tenants_num) {
-						this_thd_ctx->next_tenant = (t + 1) % tenants_num;
-					}
 #if wkr_pkt_report
 					if (t0_pkt_count != 0 && t1_pkt_count != 0) {
 						flexio_dev_print("tnt 0 pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n",
@@ -105,14 +97,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 					return;
 				}
 			}
-		}
-
-		if (tenants_num) {
-			start_tenant++;
-			if (start_tenant >= tenants_num) {
-				start_tenant = 0;
-			}
-			this_thd_ctx->next_tenant = start_tenant;
 		}
 	}
 
