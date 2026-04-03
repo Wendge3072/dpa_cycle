@@ -31,6 +31,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 
 	register size_t pkt_count = 0;
 	register size_t cycle_delta;
+	register int t_id;
+	register uint16_t pkt_lmt = 1 << 8;
 #if wkr_pkt_report
 	register size_t t0_pkt_count = 0, t0_cycle_sum = 0, t0_result_sum = 0;
 	register size_t t1_pkt_count = 0, t1_cycle_sum = 0, t1_result_sum = 0;
@@ -40,14 +42,14 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	while (dtctx != NULL) {
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			struct flexio_dpa_dev_queue *this_tenant = &this_tenant_base[t];
-			int pkt_lmt = 1 << 8;
+			pkt_lmt = 1 << 8;
 			if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
 				continue;
 			}
 			while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit && pkt_lmt > 0) {
 
 				cycle_delta = __dpa_thread_cycles();
-				int t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i, (int)t, &result);
+				t_id = pp_queue(dtctx, this_thd_ctx, this_tenant, i, (int)t, &result);
 				cycle_delta = __dpa_thread_cycles() - cycle_delta;
 				if (t_id >= 0) {
 					__atomic_fetch_add(&sch_ctx->busy_cycle[t_id], cycle_delta, __ATOMIC_RELAXED);
