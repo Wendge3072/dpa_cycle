@@ -85,8 +85,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 								 t0_pkt_count, t0_cycle_sum / t0_pkt_count, t0_result_sum / t0_pkt_count);
 						flexio_dev_print("tnt 1 pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n",
 								 t1_pkt_count, t1_cycle_sum / t1_pkt_count, t1_result_sum / t1_pkt_count);
-						// flexio_dev_print("tnt b pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n",
-						// 		 tb_pkt_count, tb_cycle_sum / tb_pkt_count, tb_result_sum / tb_pkt_count);
+						flexio_dev_print("tnt b pkt num %7zu, avg cycle per pkt %6zu, avg result %zu\n",
+								 tb_pkt_count, tb_cycle_sum / tb_pkt_count, tb_result_sum / tb_pkt_count);
 					} else {
 						flexio_dev_print("--- tnt running ---, t0_pkt_count: %zu, t1_pkt_count: %zu\n",
 								 t0_pkt_count, t1_pkt_count);

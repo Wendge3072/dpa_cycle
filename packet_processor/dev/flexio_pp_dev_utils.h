@@ -46,9 +46,28 @@ struct dpa_thread_context {
 	dt_ctx_t dt_ctx;        /* SQ Data ring */
 };
 
-#define sch_cycle_report 1
-#define sch_pkt_report 1
-#define wkr_pkt_report 0
+typedef uint8_t eu_status;
+
+enum {
+	EU_OFF  = 0,
+    EU_FREE = 1,
+    EU_HANG = 2,
+    EU_BUSY = 3,
+    EU_OVER = 4,
+};
+
+struct offload_dispatch_info {
+	struct flexio_dpa_dev_queue* tenant;
+	struct dpa_sche_context* sch_ctx;
+	uint32_t restrict_pkts[MAX_TENANT_NUM];
+	uint32_t rq_wqe_idx;
+	eu_status status;
+	uint8_t reserved[1];
+};
+
+#define sch_cycle_report 0
+#define sch_pkt_report 0
+#define wkr_pkt_report 1
 
 /* The structure of the sample DPA application contains global data that the application uses */
 struct dpa_sche_context {
@@ -75,26 +94,6 @@ struct dpa_sche_context {
 #endif
 };
 
-#define ATOMIC_COMMUNICATE
-
-typedef uint8_t eu_status;
-
-enum {
-	EU_OFF  = 0,
-    EU_FREE = 1,
-    EU_HANG = 2,
-    EU_BUSY = 3,
-    EU_OVER = 4,
-};
-
-struct offload_dispatch_info {
-	struct flexio_dpa_dev_queue* tenant;
-	struct dpa_sche_context* sch_ctx;
-	uint32_t restrict_pkts[MAX_TENANT_NUM];
-	uint32_t rq_wqe_idx;
-	eu_status status;
-	uint8_t reserved[1];
-};
 
 extern struct dpa_thread_context dpa_thds_ctx[190];
 extern struct dpa_sche_context dpa_schs_ctx[32];
