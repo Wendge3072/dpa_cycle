@@ -65,8 +65,8 @@ struct offload_dispatch_info {
 	uint8_t reserved[1];
 };
 
-#define sch_cycle_report 1
-#define sch_pkt_report 0
+#define sch_cycle_report 0
+#define sch_pkt_report 1
 #define wkr_pkt_report 0
 
 /* The structure of the sample DPA application contains global data that the application uses */
