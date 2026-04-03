@@ -12,6 +12,10 @@
 /* Shared header file for packet processor sample */
 #include "../flexio_pp_com.h"
 
+#define sch_cycle_report 1
+#define sch_pkt_report 1
+#define wkr_pkt_report 0
+
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
@@ -59,10 +63,16 @@ struct dpa_sche_context {
 	struct flexio_dpa_dev_queue queues[MAX_SCHEDULER_QUEUES];
 	long long thrput_deficit[MAX_TENANT_NUM];
 	uint16_t n_packet [MAX_TENANT_NUM];
+#if sch_cycle_report
 	size_t tenant_cycle_used[MAX_TENANT_NUM];
+#endif
 	size_t tenant_cycle_target[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
 	size_t busy_cycle[MAX_TENANT_NUM];
+#if sch_pkt_report
+	size_t tenant_pkt_used[MAX_TENANT_NUM];
+	size_t busy_pkts[MAX_TENANT_NUM];
+#endif
 };
 
 #define ATOMIC_COMMUNICATE
@@ -89,9 +99,6 @@ struct offload_dispatch_info {
 extern struct dpa_thread_context dpa_thds_ctx[190];
 extern struct dpa_sche_context dpa_schs_ctx[32];
 extern struct offload_dispatch_info offload_info[190];
-
-#define report_cycle_usage 1
-#define report_pkt_usage 0
 
 #define SCHED_PERIOD_CYCLES DPA_FREQ_HZ / 1000
 #define SCHED_PERIOD_CYCLES_PERCENT SCHED_PERIOD_CYCLES / 100
