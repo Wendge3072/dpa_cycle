@@ -38,7 +38,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	while (dtctx != NULL) {
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			struct flexio_dpa_dev_queue *this_tenant = &this_tenant_base[t];
-			int pkt_lmt = 1 << 9;
+			int pkt_lmt = 1 << 8;
 
 			if (__atomic_load_n(&offload_info[i].sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
 				continue;

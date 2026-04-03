@@ -12,9 +12,9 @@
 /* Shared header file for packet processor sample */
 #include "../flexio_pp_com.h"
 
-#define sch_cycle_report 1
-#define sch_pkt_report 1
-#define wkr_pkt_report 0
+#define sch_cycle_report 0
+#define sch_pkt_report 0
+#define wkr_pkt_report 1
 
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
