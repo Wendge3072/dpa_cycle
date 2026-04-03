@@ -266,15 +266,15 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		if (now_cycle >= next_report_cycle && tenants_num > 0) {
 			for (uint32_t t = 0; t < tenants_num; t++) {
 #if sch_cycle_report && sch_pkt_report
-				flexio_dev_print("sch %d cycle report: tenant %u total_used %10zu pkts %10zu\n",
+				flexio_dev_print("sch %d cycle report: tenant %u total_used %8zu pkts %8zu\n",
 						 i, t, this_sch_ctx->tenant_cycle_used[t] / 1000, this_sch_ctx->tenant_pkt_used[t]);
 				this_sch_ctx->tenant_cycle_used[t] = 0;
 #elif sch_cycle_report
-				flexio_dev_print("sch %d cycle report: tenant %u total_used %10zu\n",
+				flexio_dev_print("sch %d cycle report: tenant %u total_used %8zu\n",
 						 i, t, this_sch_ctx->tenant_cycle_used[t] / 1000);
 				this_sch_ctx->tenant_cycle_used[t] = 0;
 #elif sch_pkt_report
-				flexio_dev_print("sch %d pkt report: tenant %u pkts %10zu\n",
+				flexio_dev_print("sch %d pkt report: tenant %u pkts %8zu\n",
 						 i, t, this_sch_ctx->tenant_pkt_used[t]);
 #endif
 #if sch_pkt_report
