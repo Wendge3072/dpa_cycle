@@ -27,7 +27,7 @@ void pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	sq_ctx_t *tx_sq_ctx = sch_sq_ctx;
 	uint32_t sch_sq_number = sch_queue->sq_ctx.sq_number;
 	uint32_t thd_sq_number = thd_queue->sq_ctx.sq_number;
-	uint32_t tx_sq_number = thd_sq_number;
+	uint32_t tx_sq_number = sch_sq_number;
 
 	/* Size of the data */
 	uint32_t data_sz;
