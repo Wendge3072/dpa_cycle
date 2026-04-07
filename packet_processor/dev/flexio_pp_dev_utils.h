@@ -73,7 +73,10 @@ extern struct offload_dispatch_info offload_info[190];
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
-void pp_queue(struct flexio_dev_thread_ctx *dtctx, struct flexio_dpa_dev_queue* tenant);
+void pp_queue(struct flexio_dev_thread_ctx *dtctx,
+	      struct flexio_dpa_dev_queue *rq_queue,
+	      struct flexio_dpa_dev_queue *sch_queue,
+	      struct dpa_thread_context *thd_queue);
 
 flexio_dev_rpc_handler_t thd_ctx_init;
 __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data);

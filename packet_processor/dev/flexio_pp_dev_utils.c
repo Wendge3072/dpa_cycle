@@ -8,7 +8,10 @@ struct dpa_sche_context dpa_schs_ctx[32];
 struct offload_dispatch_info offload_info[190];
 
 
-void pp_queue(struct flexio_dev_thread_ctx *dtctx, struct flexio_dpa_dev_queue* tenant)
+void pp_queue(struct flexio_dev_thread_ctx *dtctx,
+	      struct flexio_dpa_dev_queue *rq_queue,
+	      struct flexio_dpa_dev_queue *sch_queue,
+	      struct dpa_thread_context *thd_queue)
 {
 	/* RX packet handling variables */
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
@@ -19,31 +22,40 @@ void pp_queue(struct flexio_dev_thread_ctx *dtctx, struct flexio_dpa_dev_queue* 
 
 	/* TX packet handling variables */
 	union flexio_dev_sqe_seg *swqe;
+	sq_ctx_t *sch_sq_ctx = &sch_queue->sq_ctx;
+	sq_ctx_t *thd_sq_ctx = &thd_queue->sq_ctx;
+	sq_ctx_t *tx_sq_ctx = thd_sq_ctx;
+	uint32_t sch_sq_number = sch_queue->sq_ctx.sq_number;
+	uint32_t thd_sq_number = thd_queue->sq_ctx.sq_number;
+	uint32_t tx_sq_number = thd_sq_number;
 
 	/* Size of the data */
 	uint32_t data_sz;
 
 	/* Extract relevant data from the CQE */
-	rq_wqe_idx = be16_to_cpu((volatile __be16)tenant->rq_cq_ctx.cqe->wqe_counter);
-	data_sz = be32_to_cpu((volatile __be32)tenant->rq_cq_ctx.cqe->byte_cnt);
+	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_queue->rq_cq_ctx.cqe->wqe_counter);
+	data_sz = be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt);
 
 	/* Get the RQ WQE pointed to by the CQE */
-	rwqe = &(tenant->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
+	rwqe = &(rq_queue->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 
 	/* Extract data (whole packet) pointed to by the RQ WQE */
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
 	swap_mac(rq_data);
 
-	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
-	tenant->sq_ctx.sq_wqe_seg_idx += 4;
-	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, tenant->rq_lkey, (uint64_t)rq_data);
+	/* Toggle tx_sq_ctx/tx_sq_number here when comparing sch SQ vs worker SQ. */
+	(void)sch_sq_ctx;
+	(void)sch_sq_number;
+	swqe = &(tx_sq_ctx->sq_ring[(tx_sq_ctx->sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
+	tx_sq_ctx->sq_wqe_seg_idx += 4;
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, rq_queue->rq_lkey, (uint64_t)rq_data);
 	
 	/* Ring DB */
 	__dpa_thread_memory_writeback();
-	flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
-	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-	com_step_cq(&(tenant->rq_cq_ctx));
+	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number);
+	flexio_dev_dbr_rq_inc_pi(rq_queue->rq_ctx.rq_dbr);
+	com_step_cq(&(rq_queue->rq_cq_ctx));
 }
 
 flexio_dev_rpc_handler_t thd_ctx_init;

@@ -27,7 +27,7 @@ __dpa_global__ void flexio_pp_dev_2(uint64_t thread_arg)
 	register size_t pkt_count = 0;
 	while (dtctx != NULL) {
 		while (flexio_dev_cqe_get_owner(this_tenant->rq_cq_ctx.cqe) != this_tenant->rq_cq_ctx.cq_hw_owner_bit) {
-			pp_queue(dtctx, this_tenant);
+			pp_queue(dtctx, this_thd_ctx, this_tenant);
 			pkt_count++;
 			if (pkt_count >= WORKER_BATCH_SIZE) {
 				pkt_count = 0;
