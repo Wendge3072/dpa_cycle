@@ -20,13 +20,13 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	flexio_dev_get_thread_ctx(&dtctx);
 	com_step_cq(wakeup_cq_ctx);
 
-	// if(!data_from_host->not_first_run){
-	// 	if (__atomic_load_n(&thd_info->status, __ATOMIC_ACQUIRE) == EU_OFF) {
-	// 		__atomic_store_n(&thd_info->status, EU_FREE, __ATOMIC_RELEASE);
-	// 	}
-	// 	spin_on_status(i, EU_HANG);
-	// 	data_from_host->not_first_run = 1;
-	// }
+	if(!data_from_host->not_first_run){
+		if (__atomic_load_n(&thd_info->status, __ATOMIC_ACQUIRE) == EU_OFF) {
+			__atomic_store_n(&thd_info->status, EU_FREE, __ATOMIC_RELEASE);
+		}
+		spin_on_status(i, EU_HANG);
+		data_from_host->not_first_run = 1;
+	}
 
 	rq_queues[0] = __atomic_load_n(&thd_info->assigned_queues[0], __ATOMIC_RELAXED);
 	rq_queues[1] = __atomic_load_n(&thd_info->assigned_queues[1], __ATOMIC_RELAXED);
