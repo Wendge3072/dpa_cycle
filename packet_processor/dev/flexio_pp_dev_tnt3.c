@@ -25,17 +25,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 		data_from_host->not_first_run = 1;
 	}
 	active_queues = __atomic_load_n(&offload_info[i].num_queues, __ATOMIC_ACQUIRE);
-	if (active_queues > WORKER_QUEUES_PER_THREAD) {
-		active_queues = WORKER_QUEUES_PER_THREAD;
-	}
-	if (active_queues == 0) {
-		__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
-		flexio_dev_cq_arm(dtctx, this_thd_ctx->queue.rq_cq_ctx.cq_idx,
-				  this_thd_ctx->queue.rq_cq_ctx.cq_number);
-		__atomic_store_n(&offload_info[i].status, EU_OFF, __ATOMIC_RELEASE);
-		flexio_dev_thread_reschedule();
-		return;
-	}
+	// if (active_queues > WORKER_QUEUES_PER_THREAD) {
+	// 	active_queues = WORKER_QUEUES_PER_THREAD;
+	// }
 	for (uint32_t q = 0; q < active_queues; q++) {
 		rq_queues[q] = __atomic_load_n(&offload_info[i].assigned_queues[q], __ATOMIC_RELAXED);
 	}
