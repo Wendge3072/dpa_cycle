@@ -6,10 +6,9 @@ struct dpa_sche_context dpa_schs_ctx[32];
 
 // Offload dispatch info for each thread, used for scheduler to dispatch packets to threads.
 struct offload_dispatch_info offload_info[190];
-size_t check[2];
 
 
-int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* this_thd_ctx __unused, struct flexio_dpa_dev_queue* tenant, int thd_id, uint32_t *result)
+void pp_queue(struct flexio_dev_thread_ctx *dtctx, struct flexio_dpa_dev_queue* tenant)
 {
 	/* RX packet handling variables */
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
@@ -34,23 +33,7 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	/* Extract data (whole packet) pointed to by the RQ WQE */
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
-	uint32_t tenant_indicator = *(uint32_t *)(rq_data + 46);
-	int tenant_id = (tenant_indicator == 0) ? 0 : 1;
-	struct dpa_sche_context* sch_ctx = offload_info[thd_id].sch_ctx;
-
-	if (__atomic_load_n(&sch_ctx->restrict_tenant[tenant_id], __ATOMIC_RELAXED) == 1) {
-		// __dpa_thread_memory_writeback();
-		flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
-		com_step_cq(&(tenant->rq_cq_ctx));
-		// __atomic_fetch_add(&offload_info[thd_id].restrict_pkts[tenant_id], 1, __ATOMIC_RELAXED);
-		// *result = 0;
-		// return tenant_id;
-		return -1;
-	}
-
 	swap_mac(rq_data);
-	// volatile uint_test checksum = calculate_checksum_nrnd(rq_data, data_sz / 4, 1);
-	// *result = calculate_checksum_nrnd(rq_data + 42, (data_sz - 42) / 4, 1);
 
 	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	tenant->sq_ctx.sq_wqe_seg_idx += 4;
@@ -61,8 +44,6 @@ int pp_queue(struct flexio_dev_thread_ctx *dtctx, struct dpa_thread_context* thi
 	flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
 	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
 	com_step_cq(&(tenant->rq_cq_ctx));
-
-	return tenant_id;
 }
 
 flexio_dev_rpc_handler_t thd_ctx_init;
@@ -83,8 +64,6 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 			data_from_host->rq_cq_transf.log_cq_depth,
 			data_from_host->rq_cq_transf.cq_ring_daddr,
 			data_from_host->rq_cq_transf.cq_dbr_daddr);
-	flexio_dev_print("thd %d rq_cq_num %u, dpa_thds_ctx: %p\n", i, data_from_host->rq_cq_transf.cq_num, (void*)&(dpa_thds_ctx[0]));
-	// flexio_dev_print("thd %d rq_cq_num %u\n", i, dpa_thds_ctx[i].rq_cq_ctx.cq_number);
 
 	/* Set context for RQ */
 	com_rq_ctx_init(&(dpa_thds_ctx[i].rq_ctx),
@@ -142,21 +121,9 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 	return 0;
 }
 
-inline flexio_dev_status_t change_status(uint16_t thd_id, eu_status old_status, eu_status new_status){
-	eu_status status = __atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE);
-	flexio_dev_print("thd: %d, status: %d, old_status: %d, new_status: %d\n", thd_id, status, old_status, new_status);
-	if (status == old_status){
-		__atomic_store_n(&offload_info[thd_id].status, new_status, __ATOMIC_RELEASE);
-		return FLEXIO_DEV_STATUS_SUCCESS;
-	}else{
-		return FLEXIO_DEV_STATUS_FAILED;
-	}
-}
-
 inline void spin_on_status(uint16_t thd_id, eu_status expected_status){
 	eu_status status;
 	do{
 		status = __atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE);
 	}while (status != expected_status);
 }
-
