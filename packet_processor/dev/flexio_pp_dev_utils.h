@@ -72,15 +72,17 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	 sq_ctx_t *tx_sq_ctx,
 	 uint32_t tx_sq_number)
 {
-	struct flexio_dev_wqe_rcv_data_seg *rwqe;
-	union flexio_dev_sqe_seg *swqe;
-	uint32_t rq_wqe_idx;
-	uint32_t data_sz;
-	char *rq_data;
+	register cq_ctx_t *rq_cq_ctx = &(rq_queue->rq_cq_ctx);
+	register rq_ctx_t *rq_ctx = &(rq_queue->rq_ctx);
+	register struct flexio_dev_wqe_rcv_data_seg *rwqe;
+	register union flexio_dev_sqe_seg *swqe;
+	register uint32_t rq_wqe_idx;
+	register uint32_t data_sz;
+	register char *rq_data;
 
-	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_queue->rq_cq_ctx.cqe->wqe_counter);
-	data_sz = be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt);
-	rwqe = &(rq_queue->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
+	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter);
+	data_sz = be32_to_cpu((volatile __be32)rq_cq_ctx->cqe->byte_cnt);
+	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
 	swap_mac(rq_data);
@@ -91,8 +93,8 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 
 	__dpa_thread_memory_writeback();
 	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number);
-	flexio_dev_dbr_rq_inc_pi(rq_queue->rq_ctx.rq_dbr);
-	com_step_cq(&(rq_queue->rq_cq_ctx));
+	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr);
+	com_step_cq(rq_cq_ctx);
 }
 
 flexio_dev_rpc_handler_t thd_ctx_init;
