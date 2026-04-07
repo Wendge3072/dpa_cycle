@@ -56,7 +56,7 @@ enum {
 
 struct offload_dispatch_info {
 	struct flexio_dpa_dev_queue *assigned_queues[WORKER_QUEUES_PER_THREAD];
-	uint32_t num_queues;
+	uint32_t wakeup_cq_num;
 	eu_status status;
 };
 
@@ -66,10 +66,34 @@ extern struct offload_dispatch_info offload_info[190];
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
-void pp_queue(struct flexio_dev_thread_ctx *dtctx,
-	      struct flexio_dpa_dev_queue *rq_queue,
-	      struct flexio_dpa_dev_queue *sch_queue,
-	      struct flexio_dpa_dev_queue *thd_queue);
+static inline __attribute__((always_inline)) void
+pp_queue(struct flexio_dev_thread_ctx *dtctx,
+	 struct flexio_dpa_dev_queue *rq_queue,
+	 sq_ctx_t *tx_sq_ctx,
+	 uint32_t tx_sq_number)
+{
+	struct flexio_dev_wqe_rcv_data_seg *rwqe;
+	union flexio_dev_sqe_seg *swqe;
+	uint32_t rq_wqe_idx;
+	uint32_t data_sz;
+	char *rq_data;
+
+	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_queue->rq_cq_ctx.cqe->wqe_counter);
+	data_sz = be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt);
+	rwqe = &(rq_queue->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
+	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+
+	swap_mac(rq_data);
+
+	swqe = &(tx_sq_ctx->sq_ring[(tx_sq_ctx->sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
+	tx_sq_ctx->sq_wqe_seg_idx += 4;
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, rq_queue->rq_lkey, (uint64_t)rq_data);
+
+	__dpa_thread_memory_writeback();
+	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number);
+	flexio_dev_dbr_rq_inc_pi(rq_queue->rq_ctx.rq_dbr);
+	com_step_cq(&(rq_queue->rq_cq_ctx));
+}
 
 flexio_dev_rpc_handler_t thd_ctx_init;
 __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data);

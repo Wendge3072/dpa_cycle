@@ -75,35 +75,46 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 }
 
 static inline void
-sch_check_workers(struct flexio_dev_thread_ctx *dtctx,
-		  struct host2dev_packet_processor_data_sch *data_from_host,
-		  struct dpa_sche_context *this_sch_ctx,
-		  uint8_t refresh_assignments)
+sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
+		   struct dpa_sche_context *this_sch_ctx)
 {
 	int i = data_from_host->sch_id;
 
 	for (uint32_t worker_idx = 0; worker_idx < data_from_host->threads_num_per_scheduler; worker_idx++) {
 		uint32_t thd_id = i * data_from_host->threads_num_per_scheduler + worker_idx;
 		uint32_t base_queue_idx = worker_idx * WORKER_QUEUES_PER_THREAD;
-		eu_status current_status;
+		struct offload_dispatch_info *thd_info = &offload_info[thd_id];
 
-		if (refresh_assignments) {
-			for (uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
-				__atomic_store_n(&offload_info[thd_id].assigned_queues[q],
-						 &(this_sch_ctx->queues[base_queue_idx + q]),
-						 __ATOMIC_RELAXED);
-			}
-			__atomic_store_n(&offload_info[thd_id].num_queues, WORKER_QUEUES_PER_THREAD,
-					 __ATOMIC_RELEASE);
+		__atomic_store_n(&thd_info->assigned_queues[0],
+				 &(this_sch_ctx->queues[base_queue_idx]),
+				 __ATOMIC_RELAXED);
+		__atomic_store_n(&thd_info->assigned_queues[1],
+				 &(this_sch_ctx->queues[base_queue_idx + 1]),
+				 __ATOMIC_RELAXED);
+		thd_info->wakeup_cq_num = dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number;
+	}
+}
+
+static inline void
+sch_check_workers(struct flexio_dev_thread_ctx *dtctx,
+		  struct host2dev_packet_processor_data_sch *data_from_host)
+{
+	int i = data_from_host->sch_id;
+
+	for (uint32_t worker_idx = 0; worker_idx < data_from_host->threads_num_per_scheduler; worker_idx++) {
+		uint32_t thd_id = i * data_from_host->threads_num_per_scheduler + worker_idx;
+		struct offload_dispatch_info *thd_info = &offload_info[thd_id];
+		eu_status current_status = __atomic_load_n(&thd_info->status, __ATOMIC_ACQUIRE);
+
+		if (!thd_info->wakeup_cq_num) {
+			thd_info->wakeup_cq_num = dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number;
 		}
-		current_status = __atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE);
 
-		if (current_status == EU_OFF &&
-		    dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number) {
-			flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number);
-			__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
+		if (current_status == EU_OFF && thd_info->wakeup_cq_num) {
+			flexio_dev_msix_send(dtctx, thd_info->wakeup_cq_num);
+			__atomic_store_n(&thd_info->status, EU_HANG, __ATOMIC_RELEASE);
 		} else if (current_status == EU_FREE) {
-			__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
+			__atomic_store_n(&thd_info->status, EU_HANG, __ATOMIC_RELEASE);
 		}
 	}
 }
@@ -122,13 +133,14 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	if (first_run) {
 		sch_ctx_init(dtctx, data_from_host);
+		sch_assign_workers(data_from_host, this_sch_ctx);
 		data_from_host->not_first_run = 1;
 	}
 
-	sch_check_workers(dtctx, data_from_host, this_sch_ctx, first_run);
+	sch_check_workers(dtctx, data_from_host);
 
 	while (__dpa_thread_cycles() < reschedule_cycle) {
-		sch_check_workers(dtctx, data_from_host, this_sch_ctx, 0);
+		sch_check_workers(dtctx, data_from_host);
 	}
 
 	__dpa_thread_memory_writeback();
