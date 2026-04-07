@@ -77,20 +77,30 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 static inline void
 sch_check_workers(struct flexio_dev_thread_ctx *dtctx,
 		  struct host2dev_packet_processor_data_sch *data_from_host,
-		  struct dpa_sche_context *this_sch_ctx)
+		  struct dpa_sche_context *this_sch_ctx,
+		  uint8_t refresh_assignments)
 {
 	int i = data_from_host->sch_id;
 
-	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
-		uint32_t thd_id = i * data_from_host->num_queues + j;
+	for (uint32_t worker_idx = 0; worker_idx < data_from_host->threads_num_per_scheduler; worker_idx++) {
+		uint32_t thd_id = i * data_from_host->threads_num_per_scheduler + worker_idx;
+		uint32_t base_queue_idx = worker_idx * WORKER_QUEUES_PER_THREAD;
 		eu_status current_status;
 
-		offload_info[thd_id].tenant = &(this_sch_ctx->queues[j]);
+		if (refresh_assignments) {
+			for (uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
+				__atomic_store_n(&offload_info[thd_id].assigned_queues[q],
+						 &(this_sch_ctx->queues[base_queue_idx + q]),
+						 __ATOMIC_RELAXED);
+			}
+			__atomic_store_n(&offload_info[thd_id].num_queues, WORKER_QUEUES_PER_THREAD,
+					 __ATOMIC_RELEASE);
+		}
 		current_status = __atomic_load_n(&offload_info[thd_id].status, __ATOMIC_ACQUIRE);
 
 		if (current_status == EU_OFF &&
-		    dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number) {
-			flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].rq_cq_ctx.cq_number);
+		    dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number) {
+			flexio_dev_msix_send(dtctx, dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number);
 			__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
 		} else if (current_status == EU_FREE) {
 			__atomic_store_n(&offload_info[thd_id].status, EU_HANG, __ATOMIC_RELEASE);
@@ -115,10 +125,10 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		data_from_host->not_first_run = 1;
 	}
 
-	sch_check_workers(dtctx, data_from_host, this_sch_ctx);
+	sch_check_workers(dtctx, data_from_host, this_sch_ctx, first_run);
 
 	while (__dpa_thread_cycles() < reschedule_cycle) {
-		sch_check_workers(dtctx, data_from_host, this_sch_ctx);
+		sch_check_workers(dtctx, data_from_host, this_sch_ctx, 0);
 	}
 
 	__dpa_thread_memory_writeback();

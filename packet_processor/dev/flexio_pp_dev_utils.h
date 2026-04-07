@@ -27,21 +27,14 @@ struct flexio_dpa_dev_queue {
 struct dpa_thread_context {
 	/* Packet count - used for debug message */
 	uint64_t packets_count;
-	/* lkey - local memory key */
-	uint32_t sq_lkey;
-	uint32_t rq_lkey;
 	int buffer_location;
 	uint32_t window_id;
 	uint32_t idx;
+	uint32_t next_queue_idx;
 	// NVMe related
 	flexio_uintptr_t host_buffer;
 	flexio_uintptr_t result;
-
-	cq_ctx_t rq_cq_ctx;     /* RQ CQ */
-	rq_ctx_t rq_ctx;        /* RQ */
-	sq_ctx_t sq_ctx;        /* SQ */
-	cq_ctx_t sq_cq_ctx;     /* SQ CQ */
-	dt_ctx_t dt_ctx;        /* SQ Data ring */
+	struct flexio_dpa_dev_queue queue;
 };
 
 /* The structure of the sample DPA application contains global data that the application uses */
@@ -63,7 +56,8 @@ enum {
 };
 
 struct offload_dispatch_info {
-	struct flexio_dpa_dev_queue* tenant;
+	struct flexio_dpa_dev_queue *assigned_queues[WORKER_QUEUES_PER_THREAD];
+	uint32_t num_queues;
 	eu_status status;
 };
 
@@ -76,7 +70,7 @@ void spin_on_status(uint16_t thd_id, eu_status expected_status);
 void pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	      struct flexio_dpa_dev_queue *rq_queue,
 	      struct flexio_dpa_dev_queue *sch_queue,
-	      struct dpa_thread_context *thd_queue);
+	      struct flexio_dpa_dev_queue *thd_queue);
 
 flexio_dev_rpc_handler_t thd_ctx_init;
 __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data);

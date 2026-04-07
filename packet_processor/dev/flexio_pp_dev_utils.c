@@ -11,7 +11,7 @@ struct offload_dispatch_info offload_info[190];
 void pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	      struct flexio_dpa_dev_queue *rq_queue,
 	      struct flexio_dpa_dev_queue *sch_queue,
-	      struct dpa_thread_context *thd_queue)
+	      struct flexio_dpa_dev_queue *thd_queue)
 {
 	/* RX packet handling variables */
 	struct flexio_dev_wqe_rcv_data_seg *rwqe;
@@ -65,58 +65,64 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 	struct flexio_dev_thread_ctx *dtctx;
 	flexio_dev_get_thread_ctx(&dtctx);
 	int i = data_from_host->thd_id;
+	struct flexio_dpa_dev_queue *queue_ctx = &(dpa_thds_ctx[i].queue);
+
 	dpa_thds_ctx[i].packets_count = 0;
-	dpa_thds_ctx[i].sq_lkey = data_from_host->sq_transf.wqd_mkey_id;
-	dpa_thds_ctx[i].rq_lkey = data_from_host->rq_transf.wqd_mkey_id;
+	dpa_thds_ctx[i].buffer_location = data_from_host->buffer_location;
 	dpa_thds_ctx[i].window_id = data_from_host->window_id;
 	dpa_thds_ctx[i].idx = i;
+	dpa_thds_ctx[i].next_queue_idx = 0;
+	queue_ctx->sq_lkey = data_from_host->sq_transf.wqd_mkey_id;
+	queue_ctx->rq_lkey = data_from_host->rq_transf.wqd_mkey_id;
+
 	/* Set context for RQ's CQ */
-	com_cq_ctx_init(&(dpa_thds_ctx[i].rq_cq_ctx),
+	com_cq_ctx_init(&(queue_ctx->rq_cq_ctx),
 			data_from_host->rq_cq_transf.cq_num,
 			data_from_host->rq_cq_transf.log_cq_depth,
 			data_from_host->rq_cq_transf.cq_ring_daddr,
 			data_from_host->rq_cq_transf.cq_dbr_daddr);
 
 	/* Set context for RQ */
-	com_rq_ctx_init(&(dpa_thds_ctx[i].rq_ctx),
+	com_rq_ctx_init(&(queue_ctx->rq_ctx),
 			data_from_host->rq_transf.wq_num,
 			data_from_host->rq_transf.wq_ring_daddr,
 			data_from_host->rq_transf.wq_dbr_daddr);
 
 	/* Set context for SQ */
-	com_sq_ctx_init(&(dpa_thds_ctx[i].sq_ctx),
+	com_sq_ctx_init(&(queue_ctx->sq_ctx),
 			data_from_host->sq_transf.wq_num,
 			data_from_host->sq_transf.wq_ring_daddr);
 
 	/* Set context for SQ's CQ */
-	com_cq_ctx_init(&(dpa_thds_ctx[i].sq_cq_ctx),
+	com_cq_ctx_init(&(queue_ctx->sq_cq_ctx),
 			data_from_host->sq_cq_transf.cq_num,
 			data_from_host->sq_cq_transf.log_cq_depth,
 			data_from_host->sq_cq_transf.cq_ring_daddr,
 			data_from_host->sq_cq_transf.cq_dbr_daddr);
 
 	/* Set context for data */
-	com_dt_ctx_init(&(dpa_thds_ctx[i].dt_ctx), data_from_host->sq_transf.wqd_daddr);
-
+	com_dt_ctx_init(&(queue_ctx->dt_ctx), data_from_host->sq_transf.wqd_daddr);
 
 	for (uint64_t a = 0; a < (1UL << LOG_Q_DEPTH); a++) {
-
 		union flexio_dev_sqe_seg *swqe;
-        swqe = get_next_sqe(&(dpa_thds_ctx[i].sq_ctx), SQ_IDX_MASK);
-		flexio_dev_swqe_seg_ctrl_set(swqe, a, dpa_thds_ctx[i].sq_ctx.sq_number,
-				     MLX5_CTRL_SEG_CE_CQE_ON_CQE_ERROR, FLEXIO_CTRL_SEG_SEND_EN);
 
-		swqe = get_next_sqe(&(dpa_thds_ctx[i].sq_ctx), SQ_IDX_MASK);
+		swqe = get_next_sqe(&(queue_ctx->sq_ctx), SQ_IDX_MASK);
+		flexio_dev_swqe_seg_ctrl_set(swqe, a, queue_ctx->sq_ctx.sq_number,
+				     MLX5_CTRL_SEG_CE_CQE_ON_CQE_ERROR,
+				     FLEXIO_CTRL_SEG_SEND_EN);
+
+		swqe = get_next_sqe(&(queue_ctx->sq_ctx), SQ_IDX_MASK);
 		flexio_dev_swqe_seg_eth_set(swqe, 0, 0, 0, NULL);
 
-        swqe = get_next_sqe(&(dpa_thds_ctx[i].sq_ctx), SQ_IDX_MASK);
-		flexio_dev_swqe_seg_mem_ptr_data_set(swqe, 0, dpa_thds_ctx[i].sq_lkey, 0);
+		swqe = get_next_sqe(&(queue_ctx->sq_ctx), SQ_IDX_MASK);
+		flexio_dev_swqe_seg_mem_ptr_data_set(swqe, 0, queue_ctx->sq_lkey, 0);
 
-        swqe = get_next_sqe(&(dpa_thds_ctx[i].sq_ctx), SQ_IDX_MASK);
+		swqe = get_next_sqe(&(queue_ctx->sq_ctx), SQ_IDX_MASK);
 	}
-    dpa_thds_ctx[i].sq_ctx.sq_wqe_seg_idx = 0;
-	dpa_thds_ctx[i].rq_ctx.rqd_dpa_addr = data_from_host->rq_transf.wqd_daddr;
-	dpa_thds_ctx[i].sq_ctx.sqd_dpa_addr = data_from_host->sq_transf.wqd_daddr;
+	queue_ctx->sq_ctx.sq_wqe_seg_idx = 0;
+	queue_ctx->rq_ctx.rqd_dpa_addr = data_from_host->rq_transf.wqd_daddr;
+	queue_ctx->sq_ctx.sqd_dpa_addr = data_from_host->sq_transf.wqd_daddr;
+
 	flexio_dev_status_t ret;
 	ret = flexio_dev_window_config(dtctx, (uint16_t)dpa_thds_ctx[i].window_id, data_from_host->result_buffer_mkey_id);
 	if (ret != FLEXIO_DEV_STATUS_SUCCESS) {

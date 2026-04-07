@@ -38,6 +38,7 @@
 
 /* Scheduler configurations */
 #define MAX_SCHEDULER_QUEUES 16
+#define WORKER_QUEUES_PER_THREAD 2
 #define MAX_TENANT_NUM 2
 #define DPA_FREQ_HZ 1800000000ULL  // 1.8GHz
 
@@ -116,6 +117,17 @@ struct app_transfer_wq {
 	flexio_uintptr_t wqd_daddr;
 } __attribute__((__packed__, aligned(8)));
 
+struct host2dev_queue {
+	/* RQ's CQ transfer information. */
+	struct app_transfer_cq rq_cq_transf;
+	/* RQ transfer information. */
+	struct app_transfer_wq rq_transf;
+	/* SQ's CQ transfer information. */
+	struct app_transfer_cq sq_cq_transf;
+	/* SQ transfer information. */
+	struct app_transfer_wq sq_transf;
+};
+
 /* Collateral structure for transfer host data to device */
 struct host2dev_packet_processor_data_thd {
 	/* RQ's CQ transfer information. */
@@ -139,17 +151,6 @@ struct host2dev_packet_processor_data_thd {
 	void* host_buffer;
 	uint64_t dpa_result_buffer;
 } __attribute__((__packed__, aligned(8)));
-
-struct host2dev_queue {
-	/* RQ's CQ transfer information. */
-	struct app_transfer_cq rq_cq_transf;
-	/* RQ transfer information. */
-	struct app_transfer_wq rq_transf;
-	/* SQ's CQ transfer information. */
-	struct app_transfer_cq sq_cq_transf;
-	/* SQ transfer information. */
-	struct app_transfer_wq sq_transf;
-};
 
 struct host2dev_packet_processor_data_sch {
 	struct host2dev_queue queues[MAX_SCHEDULER_QUEUES];
