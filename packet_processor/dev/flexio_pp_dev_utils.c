@@ -71,7 +71,6 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 	dpa_thds_ctx[i].buffer_location = data_from_host->buffer_location;
 	dpa_thds_ctx[i].window_id = data_from_host->window_id;
 	dpa_thds_ctx[i].idx = i;
-	dpa_thds_ctx[i].next_queue_idx = 0;
 	queue_ctx->sq_lkey = data_from_host->sq_transf.wqd_mkey_id;
 	queue_ctx->rq_lkey = data_from_host->rq_transf.wqd_mkey_id;
 

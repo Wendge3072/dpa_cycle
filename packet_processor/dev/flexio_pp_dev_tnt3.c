@@ -1,6 +1,6 @@
 #include "flexio_pp_dev_utils.h"
 
-#define WORKER_BATCH_SIZE 1000000UL
+#define WORKER_BATCH_SIZE 1048576UL
 #define WORKER_QUEUE_BURST_SIZE (Q_DEPTH * 2UL)
 
 flexio_dev_event_handler_t flexio_pp_dev_32;
@@ -29,7 +29,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 		active_queues = WORKER_QUEUES_PER_THREAD;
 	}
 	if (active_queues == 0) {
-		flexio_dev_print("Thread %d has no assigned queues. Exiting.\n", i);
 		__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 		flexio_dev_cq_arm(dtctx, this_thd_ctx->queue.rq_cq_ctx.cq_idx,
 				  this_thd_ctx->queue.rq_cq_ctx.cq_number);
@@ -41,18 +40,11 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 		rq_queues[q] = __atomic_load_n(&offload_info[i].assigned_queues[q], __ATOMIC_RELAXED);
 	}
 
-	register size_t pkt_count = 0;
+	register size_t pkt_count = 0, queue_burst = 0;
 	while (dtctx != NULL) {
-		uint32_t start_queue = this_thd_ctx->next_queue_idx;
-
 		for (uint32_t q = 0; q < active_queues; q++) {
-			uint32_t queue_idx = (start_queue + q) % active_queues;
-			struct flexio_dpa_dev_queue *rq_queue = rq_queues[queue_idx];
-			size_t queue_burst = 0;
-
-			if (rq_queue == NULL) {
-				continue;
-			}
+			struct flexio_dpa_dev_queue *rq_queue = rq_queues[q];
+			queue_burst = 0;
 
 			while (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) != rq_queue->rq_cq_ctx.cq_hw_owner_bit &&
 			       queue_burst < WORKER_QUEUE_BURST_SIZE) {
@@ -60,8 +52,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				pkt_count++;
 				queue_burst++;
 				if (pkt_count >= WORKER_BATCH_SIZE) {
-					pkt_count = 0;
-					this_thd_ctx->next_queue_idx = (queue_idx + 1) % active_queues;
 					__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 					flexio_dev_cq_arm(dtctx,
 							  this_thd_ctx->queue.rq_cq_ctx.cq_idx,
@@ -71,9 +61,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 					return;
 				}
 			}
-		}
-		if (active_queues > 1) {
-			this_thd_ctx->next_queue_idx = (start_queue + 1) % active_queues;
 		}
 	}
 
