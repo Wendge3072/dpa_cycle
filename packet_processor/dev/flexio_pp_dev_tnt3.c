@@ -99,7 +99,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				if (__atomic_load_n(restricted, __ATOMIC_ACQUIRE)) {
 					break;
 				}
-				__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+				__dpa_thread_fence(__DPA_MEMORY, __DPA_R, __DPA_R);
 				cycle_delta = __dpa_thread_cycles();
 				pp_queue(dtctx, sch_ctx, q, rq_queue, tx_sq_ctx, tx_sq_number);
 				cycle_delta = __dpa_thread_cycles() - cycle_delta; 
