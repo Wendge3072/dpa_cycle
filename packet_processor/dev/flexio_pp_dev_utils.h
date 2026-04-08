@@ -12,6 +12,15 @@
 /* Shared header file for packet processor sample */
 #include "../flexio_pp_com.h"
 
+/*
+ * Worker TX SQ selection:
+ * 1: use the worker thread's private SQ.
+ * 0: use the SQ paired with each scheduler-assigned queue.
+ */
+#ifndef WORKER_TX_USE_PRIVATE_SQ
+#define WORKER_TX_USE_PRIVATE_SQ 1
+#endif
+
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
@@ -44,6 +53,7 @@ struct dpa_sche_context {
 	uint32_t window_id;
 	uint32_t idx;
 	struct flexio_dpa_dev_queue queues[MAX_SCHEDULER_QUEUES];
+	size_t tenant_cycle_used[MAX_TENANT_NUM];
 };
 
 typedef uint8_t eu_status;
@@ -56,6 +66,7 @@ enum {
 
 struct offload_dispatch_info {
 	struct flexio_dpa_dev_queue *assigned_queues[WORKER_QUEUES_PER_THREAD];
+	struct dpa_sche_context *sch_ctx;
 	uint32_t wakeup_cq_num;
 	eu_status status;
 };

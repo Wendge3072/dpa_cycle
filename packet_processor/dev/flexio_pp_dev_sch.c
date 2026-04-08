@@ -10,6 +10,9 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	dpa_schs_ctx[i].packets_count = 0;
 	dpa_schs_ctx[i].idx = i;
 	dpa_schs_ctx[i].window_id = data_from_host->window_id;
+	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
+		__atomic_store_n(&dpa_schs_ctx[i].tenant_cycle_used[t], 0, __ATOMIC_RELAXED);
+	}
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 		dpa_schs_ctx[i].queues[j].sq_lkey = data_from_host->queues[j].sq_transf.wqd_mkey_id;
 		dpa_schs_ctx[i].queues[j].rq_lkey = data_from_host->queues[j].rq_transf.wqd_mkey_id;
@@ -91,6 +94,7 @@ sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
 		__atomic_store_n(&thd_info->assigned_queues[1],
 				 &(this_sch_ctx->queues[base_queue_idx + 1]),
 				 __ATOMIC_RELAXED);
+		__atomic_store_n(&thd_info->sch_ctx, this_sch_ctx, __ATOMIC_RELAXED);
 		thd_info->wakeup_cq_num = dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number;
 	}
 }
