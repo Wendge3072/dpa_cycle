@@ -160,8 +160,8 @@ sch_check_cycle_budget(struct dpa_sche_context *sch_ctx,
 		current_used = __atomic_load_n(&sch_ctx->busy_cycle[t], __ATOMIC_ACQUIRE);
 		if (current_used >= sch_ctx->tenant_cycle_target[t]) {
 			__atomic_store_n(&sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELEASE);
-			flexio_dev_print("sch %u tenant %u restricted: used %zu target %zu\n",
-					 sch_ctx->idx, t, current_used, sch_ctx->tenant_cycle_target[t]);
+			// flexio_dev_print("sch %u tenant %u restricted: used %zu target %zu\n",
+			// 		 sch_ctx->idx, t, current_used, sch_ctx->tenant_cycle_target[t]);
 		}
 	}
 }
