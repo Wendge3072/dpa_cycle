@@ -21,6 +21,10 @@
 #define WORKER_TX_USE_PRIVATE_SQ 0
 #endif
 
+#ifndef WORKER_QUEUE_CYCLE_REPORT
+#define WORKER_QUEUE_CYCLE_REPORT 1
+#endif
+
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
@@ -42,6 +46,10 @@ struct dpa_thread_context {
 	// NVMe related
 	flexio_uintptr_t host_buffer;
 	flexio_uintptr_t result;
+#if WORKER_QUEUE_CYCLE_REPORT
+	size_t queue_cycle_sum[WORKER_QUEUES_PER_THREAD];
+	size_t queue_pkt_count[WORKER_QUEUES_PER_THREAD];
+#endif
 	struct flexio_dpa_dev_queue queue;
 };
 

@@ -3,6 +3,40 @@
 #define WORKER_BATCH_SIZE 1048576UL
 #define WORKER_QUEUE_BURST_SIZE (Q_DEPTH * 2UL)
 
+#if WORKER_QUEUE_CYCLE_REPORT
+static inline void
+worker_cycle_report_reset(struct dpa_thread_context *thd_ctx)
+{
+	for (uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
+		thd_ctx->queue_cycle_sum[q] = 0;
+		thd_ctx->queue_pkt_count[q] = 0;
+	}
+}
+
+static inline void
+worker_cycle_report_accumulate(struct dpa_thread_context *thd_ctx,
+			       uint32_t queue_idx,
+			       size_t cycle_delta)
+{
+	thd_ctx->queue_cycle_sum[queue_idx] += cycle_delta;
+	thd_ctx->queue_pkt_count[queue_idx]++;
+}
+
+static inline void
+worker_cycle_report_print(struct flexio_dev_thread_ctx *dtctx,
+			  int thd_id,
+			  struct dpa_thread_context *thd_ctx)
+{
+	for (uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
+		size_t pkt_count = thd_ctx->queue_pkt_count[q];
+		size_t avg_cycle = pkt_count ? thd_ctx->queue_cycle_sum[q] / pkt_count : 0;
+
+		flexio_dev_print("worker %d queue %u avg cycle per pkt: %zu pkts: %zu\n",
+				 thd_id, q, avg_cycle, pkt_count);
+	}
+}
+#endif
+
 flexio_dev_event_handler_t flexio_pp_dev_32;
 __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 {	
@@ -10,7 +44,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	int i = data_from_host->thd_id;
 	struct offload_dispatch_info *thd_info = &offload_info[i];
 	struct flexio_dev_thread_ctx *dtctx;	
-	struct flexio_dpa_dev_queue *thd_queue = &(dpa_thds_ctx[i].queue);
+	struct dpa_thread_context *thd_ctx = &(dpa_thds_ctx[i]);
+	struct flexio_dpa_dev_queue *thd_queue = &(thd_ctx->queue);
 	cq_ctx_t *wakeup_cq_ctx = &(thd_queue->rq_cq_ctx);
 	struct flexio_dpa_dev_queue *rq_queues[WORKER_QUEUES_PER_THREAD];
 	register struct dpa_sche_context *sch_ctx;
@@ -35,6 +70,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	rq_queues[0] = __atomic_load_n(&thd_info->assigned_queues[0], __ATOMIC_RELAXED);
 	rq_queues[1] = __atomic_load_n(&thd_info->assigned_queues[1], __ATOMIC_RELAXED);
 	sch_ctx = __atomic_load_n(&thd_info->sch_ctx, __ATOMIC_RELAXED);
+#if WORKER_QUEUE_CYCLE_REPORT
+	worker_cycle_report_reset(thd_ctx);
+#endif
 
 	for (;;) {
 		for (register uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
@@ -54,6 +92,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				cycle_delta = __dpa_thread_cycles();
 				pp_queue(dtctx, rq_queue, tx_sq_ctx, tx_sq_number);
 				cycle_delta = __dpa_thread_cycles() - cycle_delta; 
+#if WORKER_QUEUE_CYCLE_REPORT
+				worker_cycle_report_accumulate(thd_ctx, q, cycle_delta);
+#endif
 				/* Each worker queue slot corresponds to one tenant in the current 2-queue layout. */
 				// if (sch_ctx != NULL) {
 					__atomic_fetch_add(&sch_ctx->tenant_cycle_used[q], cycle_delta, __ATOMIC_RELAXED);
@@ -68,6 +109,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	}
 
 worker_sleep:
+#if WORKER_QUEUE_CYCLE_REPORT
+	worker_cycle_report_print(dtctx, i, thd_ctx);
+#endif
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	flexio_dev_cq_arm(dtctx, wakeup_cq_ctx->cq_idx, wakeup_cq_ctx->cq_number);
 	__atomic_store_n(&thd_info->status, EU_OFF, __ATOMIC_RELEASE);
