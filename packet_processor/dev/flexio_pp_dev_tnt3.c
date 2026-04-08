@@ -23,7 +23,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	if(!data_from_host->not_first_run){
 		if (__atomic_load_n(&thd_info->status, __ATOMIC_ACQUIRE) == EU_OFF) {
 			__atomic_store_n(&thd_info->status, EU_FREE, __ATOMIC_RELEASE);
-			flexio_dev_print(dtctx, "Worker thread %d is set to FREE status.\n", i);
+			// flexio_dev_print(dtctx, "Worker thread %d is set to FREE status.\n", i);
 		}
 		spin_on_status(i, EU_HANG);
 		data_from_host->not_first_run = 1;
