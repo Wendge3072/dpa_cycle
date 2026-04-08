@@ -36,72 +36,6 @@ worker_cycle_report_print(int thd_id,
 }
 #endif
 
-static inline void
-worker_restrict_check_reset(struct dpa_thread_context *thd_ctx)
-{
-	for (uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
-		thd_ctx->restrict_probe_shadow[q] = 0;
-#if WORKER_RESTRICT_CHECK_REPORT
-		thd_ctx->restrict_check_cycle_sum[q] = 0;
-		thd_ctx->restrict_check_count[q] = 0;
-		thd_ctx->restrict_check_hit_count[q] = 0;
-#endif
-	}
-}
-
-static inline uint8_t *
-worker_restrict_check_addr(struct dpa_thread_context *thd_ctx,
-			   struct dpa_sche_context *sch_ctx,
-			   uint32_t queue_idx)
-{
-#if WORKER_RESTRICT_CHECK_ADDR_MODE == 1
-	(void)sch_ctx;
-	return &thd_ctx->restrict_probe_shadow[queue_idx];
-#else
-	return &sch_ctx->restrict_tenant[queue_idx];
-#endif
-}
-
-static inline uint8_t
-worker_restrict_check_load(struct dpa_thread_context *thd_ctx,
-			   uint32_t queue_idx,
-			   uint8_t *restricted)
-{
-#if WORKER_RESTRICT_CHECK_REPORT
-	size_t start_cycle = __dpa_thread_cycles();
-	uint8_t value = __atomic_load_n(restricted, __ATOMIC_ACQUIRE);
-	size_t delta = __dpa_thread_cycles() - start_cycle;
-
-	thd_ctx->restrict_check_cycle_sum[queue_idx] += delta;
-	thd_ctx->restrict_check_count[queue_idx]++;
-	if (value) {
-		thd_ctx->restrict_check_hit_count[queue_idx]++;
-	}
-	return value;
-#else
-	(void)thd_ctx;
-	(void)queue_idx;
-	return __atomic_load_n(restricted, __ATOMIC_ACQUIRE);
-#endif
-}
-
-#if WORKER_RESTRICT_CHECK_REPORT
-static inline void
-worker_restrict_check_report_print(int thd_id,
-				   struct dpa_thread_context *thd_ctx)
-{
-	for (uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
-		size_t check_count = thd_ctx->restrict_check_count[q];
-		size_t avg_cycle = check_count ? thd_ctx->restrict_check_cycle_sum[q] / check_count : 0;
-
-		flexio_dev_print("worker %d queue %u restrict-check avg cycle: %zu checks: %zu hits: %zu mode: %u\n",
-				 thd_id, q, avg_cycle, check_count,
-				 thd_ctx->restrict_check_hit_count[q],
-				 (unsigned int)WORKER_RESTRICT_CHECK_ADDR_MODE);
-	}
-}
-#endif
-
 flexio_dev_event_handler_t flexio_pp_dev_32;
 __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 {	
@@ -140,12 +74,11 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 #if WORKER_QUEUE_CYCLE_REPORT
 	worker_cycle_report_reset(thd_ctx);
 #endif
-	worker_restrict_check_reset(thd_ctx);
 
 	for (;;) {
 		for (register uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
 			rq_queue = rq_queues[q];
-			restricted = worker_restrict_check_addr(thd_ctx, sch_ctx, q);
+			restricted = &sch_ctx->restrict_tenant[q];
 			queue_burst = 0;
 			
 			if (__atomic_load_n(&sch_ctx->restrict_tenant[q], __ATOMIC_ACQUIRE)) {
@@ -163,8 +96,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			while (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) != rq_queue->rq_cq_ctx.cq_hw_owner_bit &&
 			       queue_burst < WORKER_QUEUE_BURST_SIZE) {
 				queue_burst++;
-				if (worker_restrict_check_load(thd_ctx, q, restricted)) {
-					continue;
+				if (__atomic_load_n(restricted, __ATOMIC_ACQUIRE)) {
+					break;
 				}
 				cycle_delta = __dpa_thread_cycles();
 				pp_queue(dtctx, sch_ctx, q, rq_queue, tx_sq_ctx, tx_sq_number);
@@ -188,9 +121,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 worker_sleep:
 #if WORKER_QUEUE_CYCLE_REPORT
 	worker_cycle_report_print(i, thd_ctx);
-#endif
-#if WORKER_RESTRICT_CHECK_REPORT
-	worker_restrict_check_report_print(i, thd_ctx);
 #endif
 	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	flexio_dev_cq_arm(dtctx, wakeup_cq_ctx->cq_idx, wakeup_cq_ctx->cq_number);
