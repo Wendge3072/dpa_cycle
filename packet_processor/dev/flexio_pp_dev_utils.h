@@ -98,7 +98,7 @@ static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 100};
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
-static inline __attribute__((always_inline)) int
+static inline __attribute__((always_inline)) void
 pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	 struct dpa_sche_context *sch_ctx,
 	 uint32_t tenant_id,
@@ -120,7 +120,7 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	 * be retried in the next scheduling period.
 	 */
 	if (__atomic_load_n(&sch_ctx->restrict_tenant[tenant_id], __ATOMIC_ACQUIRE)) {
-		return 0;
+		return;
 	}
 
 	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter);
@@ -138,7 +138,6 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number);
 	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr);
 	com_step_cq(rq_cq_ctx);
-	return 1;
 }
 
 flexio_dev_rpc_handler_t thd_ctx_init;
