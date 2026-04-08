@@ -12,8 +12,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	struct flexio_dev_thread_ctx *dtctx;	
 	register struct flexio_dpa_dev_queue *thd_queue = &(dpa_thds_ctx[i].queue);
 	register cq_ctx_t *wakeup_cq_ctx = &(thd_queue->rq_cq_ctx);
-	register sq_ctx_t *tx_sq_ctx = &(thd_queue->sq_ctx);
-	register uint32_t tx_sq_number = tx_sq_ctx->sq_number;
 	register size_t pkt_count = 0;
 	struct flexio_dpa_dev_queue *rq_queues[WORKER_QUEUES_PER_THREAD];
 
@@ -35,7 +33,17 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	for (;;) {
 		for (register uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
 			register struct flexio_dpa_dev_queue *rq_queue = rq_queues[q];
+			register sq_ctx_t *tx_sq_ctx;
+			register uint32_t tx_sq_number;
 			register size_t queue_burst = 0;
+
+#if WORKER_TX_USE_PRIVATE_SQ
+			tx_sq_ctx = &(thd_queue->sq_ctx);
+			tx_sq_number = tx_sq_ctx->sq_number;
+#else
+			tx_sq_ctx = &(rq_queue->sq_ctx);
+			tx_sq_number = tx_sq_ctx->sq_number;
+#endif
 
 			while (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) != rq_queue->rq_cq_ctx.cq_hw_owner_bit &&
 			       queue_burst < WORKER_QUEUE_BURST_SIZE) {

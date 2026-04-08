@@ -12,6 +12,15 @@
 /* Shared header file for packet processor sample */
 #include "../flexio_pp_com.h"
 
+/*
+ * Worker TX SQ selection:
+ * 1: use the worker thread's private SQ.
+ * 0: use the SQ paired with each scheduler-assigned queue.
+ */
+#ifndef WORKER_TX_USE_PRIVATE_SQ
+#define WORKER_TX_USE_PRIVATE_SQ 1
+#endif
+
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
