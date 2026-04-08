@@ -96,9 +96,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				cycle_delta = __dpa_thread_cycles();
 				processed = pp_queue(dtctx, sch_ctx, q, rq_queue, tx_sq_ctx, tx_sq_number);
 				cycle_delta = __dpa_thread_cycles() - cycle_delta; 
-				if (!processed) {
-					break;
-				}
+				// if (!processed) {
+				// 	break;
+				// }
 #if WORKER_QUEUE_CYCLE_REPORT
 				worker_cycle_report_accumulate(thd_ctx, q, cycle_delta);
 #endif
