@@ -67,8 +67,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 		data_from_host->not_first_run = 1;
 	}
 
-	rq_queues[0] = __atomic_load_n(&thd_info->assigned_queues[1], __ATOMIC_RELAXED);
-	rq_queues[1] = __atomic_load_n(&thd_info->assigned_queues[0], __ATOMIC_RELAXED);
+	rq_queues[0] = __atomic_load_n(&thd_info->assigned_queues[0], __ATOMIC_RELAXED);
+	rq_queues[1] = __atomic_load_n(&thd_info->assigned_queues[1], __ATOMIC_RELAXED);
 	sch_ctx = __atomic_load_n(&thd_info->sch_ctx, __ATOMIC_RELAXED);
 #if WORKER_QUEUE_CYCLE_REPORT
 	worker_cycle_report_reset(thd_ctx);
