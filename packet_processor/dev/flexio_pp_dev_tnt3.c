@@ -82,6 +82,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			queue_burst = 0;
 			
 			if (__atomic_load_n(&sch_ctx->restrict_tenant[q], __ATOMIC_ACQUIRE)) {
+				flexio_dev_print("worker %d tenant %u restricted, skipping queue\n", i, q);
 				continue;
 			}
 
