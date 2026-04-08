@@ -18,7 +18,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	struct flexio_dpa_dev_queue *rq_queues[WORKER_QUEUES_PER_THREAD];
 
 	flexio_dev_get_thread_ctx(&dtctx);
-	// com_step_cq(wakeup_cq_ctx);
+	com_step_cq(wakeup_cq_ctx);
 
 	// if(!data_from_host->not_first_run){
 	// 	if (__atomic_load_n(&thd_info->status, __ATOMIC_ACQUIRE) == EU_OFF) {
