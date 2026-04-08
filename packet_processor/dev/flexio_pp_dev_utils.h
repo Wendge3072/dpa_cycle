@@ -142,7 +142,7 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 
 	__dpa_thread_memory_writeback();
 	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number);
-	__dpa_thread_memory_writeback();
+	// __dpa_thread_memory_writeback();
 	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr);
 	com_step_cq(rq_cq_ctx);
 }
