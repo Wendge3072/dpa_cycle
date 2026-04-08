@@ -18,7 +18,7 @@
  * 0: use the SQ paired with each scheduler-assigned queue.
  */
 #ifndef WORKER_TX_USE_PRIVATE_SQ
-#define WORKER_TX_USE_PRIVATE_SQ 0
+#define WORKER_TX_USE_PRIVATE_SQ 1
 #endif
 
 #ifndef WORKER_QUEUE_CYCLE_REPORT
@@ -26,7 +26,7 @@
 #endif
 
 #ifndef SCH_CYCLE_USAGE_REPORT
-#define SCH_CYCLE_USAGE_REPORT 1
+#define SCH_CYCLE_USAGE_REPORT 0
 #endif
 
 struct flexio_dpa_dev_queue {
@@ -54,11 +54,6 @@ struct dpa_thread_context {
 #if WORKER_QUEUE_CYCLE_REPORT
 	size_t queue_cycle_sum[WORKER_QUEUES_PER_THREAD];
 	size_t queue_pkt_count[WORKER_QUEUES_PER_THREAD];
-#endif
-#if WORKER_RESTRICT_CHECK_REPORT
-	size_t restrict_check_cycle_sum[WORKER_QUEUES_PER_THREAD];
-	size_t restrict_check_count[WORKER_QUEUES_PER_THREAD];
-	size_t restrict_check_hit_count[WORKER_QUEUES_PER_THREAD];
 #endif
 	struct flexio_dpa_dev_queue queue;
 };
