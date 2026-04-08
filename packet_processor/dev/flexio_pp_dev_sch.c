@@ -4,6 +4,7 @@ static void
 sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 			  struct host2dev_packet_processor_data_sch *data_from_host)
 {
+	int sch_id = data_from_host->sch_id;
 	size_t tenants_num = data_from_host->tenants_num;
 	size_t threads_num_per_scheduler = data_from_host->threads_num_per_scheduler;
 	size_t base_cycle_budget = SCHED_PERIOD_CYCLES * threads_num_per_scheduler;
@@ -29,12 +30,18 @@ sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 	if (sum_weight > 0) {
 		for (uint32_t t = 0; t < tenants_num; t++) {
 			sch_ctx->tenant_cycle_target[t] = base_cycle_budget * cycle_weights[t] / sum_weight;
+			flexio_dev_print("sch %d tenant %u cycle budget: target=%zu period=%zu weight=%u\n",
+					 sch_id, t, sch_ctx->tenant_cycle_target[t],
+					 (size_t)SCHED_PERIOD_CYCLES, cycle_weights[t]);
 		}
 		return;
 	}
 
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		sch_ctx->tenant_cycle_target[t] = base_cycle_budget / tenants_num;
+		flexio_dev_print("sch %d tenant %u cycle budget: target=%zu period=%zu weight=equal\n",
+				 sch_id, t, sch_ctx->tenant_cycle_target[t],
+				 (size_t)SCHED_PERIOD_CYCLES);
 	}
 }
 
@@ -136,6 +143,27 @@ sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
 }
 
 static inline void
+sch_check_cycle_budget(struct dpa_sche_context *sch_ctx,
+		       struct host2dev_packet_processor_data_sch *data_from_host)
+{
+	int sch_id = data_from_host->sch_id;
+	size_t tenants_num = data_from_host->tenants_num;
+
+	// if (tenants_num > MAX_TENANT_NUM) {
+	// 	tenants_num = MAX_TENANT_NUM;
+	// }
+
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		size_t tenant_cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_used[t], 0, __ATOMIC_ACQ_REL);
+
+		if (tenant_cycle_used >= sch_ctx->tenant_cycle_target[t]) {
+			flexio_dev_print("sch %d tenant %u cycle over budget: used=%zu target=%zu\n",
+					 sch_id, t, tenant_cycle_used, sch_ctx->tenant_cycle_target[t]);
+		}
+	}
+}
+
+static inline void
 sch_check_workers(struct flexio_dev_thread_ctx *dtctx,
 		  struct host2dev_packet_processor_data_sch *data_from_host)
 {
@@ -168,6 +196,8 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	int first_run = !data_from_host->not_first_run;
 	size_t time_interval = 15;
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
+	register size_t next_sched_cycle = __dpa_thread_cycles() + SCHED_PERIOD_CYCLES;
+	size_t now_cycle = 0;
 
 	flexio_dev_get_thread_ctx(&dtctx);
 
@@ -181,6 +211,12 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	while (__dpa_thread_cycles() < reschedule_cycle) {
 		sch_check_workers(dtctx, data_from_host);
+
+		now_cycle = __dpa_thread_cycles();
+		if (now_cycle >= next_sched_cycle) {
+			sch_check_cycle_budget(this_sch_ctx, data_from_host);
+			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
+		}
 	}
 
 	__dpa_thread_memory_writeback();
