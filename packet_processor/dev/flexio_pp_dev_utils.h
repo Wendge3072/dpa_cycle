@@ -119,9 +119,9 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	 * CQE/RQ WQE untouched so the same packet stays at the queue head and can
 	 * be retried in the next scheduling period.
 	 */
-	// if (__atomic_load_n(&sch_ctx->restrict_tenant[tenant_id], __ATOMIC_ACQUIRE)) {
-	// 	return;
-	// }
+	if (__atomic_load_n(&sch_ctx->restrict_tenant[tenant_id], __ATOMIC_ACQUIRE)) {
+		return;
+	}
 
 	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter);
 	data_sz = be32_to_cpu((volatile __be32)rq_cq_ctx->cqe->byte_cnt);
