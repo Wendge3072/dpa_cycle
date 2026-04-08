@@ -29,6 +29,27 @@
 #define SCH_CYCLE_USAGE_REPORT 1
 #endif
 
+/*
+ * Hot-path restrict flag experiments in worker threads:
+ * 0: do not profile the inner-loop restrict check
+ * 1: report average cycles spent on the inner-loop restrict check
+ */
+#ifndef WORKER_RESTRICT_CHECK_REPORT
+#define WORKER_RESTRICT_CHECK_REPORT 0
+#endif
+
+/*
+ * Address source for the inner-loop restrict check in the worker:
+ * 0: shared scheduler flag sch_ctx->restrict_tenant[q]
+ * 1: worker-private shadow byte thd_ctx->restrict_probe_shadow[q]
+ *
+ * Mode 1 is for contention experiments only. It does not reflect live
+ * scheduler restrictions during the current queue burst.
+ */
+#ifndef WORKER_RESTRICT_CHECK_ADDR_MODE
+#define WORKER_RESTRICT_CHECK_ADDR_MODE 0
+#endif
+
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
@@ -50,9 +71,15 @@ struct dpa_thread_context {
 	// NVMe related
 	flexio_uintptr_t host_buffer;
 	flexio_uintptr_t result;
+	uint8_t restrict_probe_shadow[WORKER_QUEUES_PER_THREAD];
 #if WORKER_QUEUE_CYCLE_REPORT
 	size_t queue_cycle_sum[WORKER_QUEUES_PER_THREAD];
 	size_t queue_pkt_count[WORKER_QUEUES_PER_THREAD];
+#endif
+#if WORKER_RESTRICT_CHECK_REPORT
+	size_t restrict_check_cycle_sum[WORKER_QUEUES_PER_THREAD];
+	size_t restrict_check_count[WORKER_QUEUES_PER_THREAD];
+	size_t restrict_check_hit_count[WORKER_QUEUES_PER_THREAD];
 #endif
 	struct flexio_dpa_dev_queue queue;
 };
