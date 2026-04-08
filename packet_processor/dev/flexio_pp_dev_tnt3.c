@@ -53,9 +53,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 
 			while (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) != rq_queue->rq_cq_ctx.cq_hw_owner_bit &&
 			       queue_burst < WORKER_QUEUE_BURST_SIZE) {
-				cycle_delta = __dpa_thread_cycles();
+				// cycle_delta = __dpa_thread_cycles();
 				pp_queue(dtctx, rq_queue, tx_sq_ctx, tx_sq_number);
-				cycle_delta = __dpa_thread_cycles() - cycle_delta;
+				// cycle_delta = __dpa_thread_cycles() - cycle_delta; 
 				/* Each worker queue slot corresponds to one tenant in the current 2-queue layout. */
 				// if (sch_ctx != NULL && q < MAX_TENANT_NUM) {
 				// 	__atomic_fetch_add(&sch_ctx->tenant_cycle_used[q], cycle_delta, __ATOMIC_RELAXED);
