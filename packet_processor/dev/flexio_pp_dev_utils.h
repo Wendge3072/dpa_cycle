@@ -54,6 +54,7 @@ struct dpa_sche_context {
 	uint32_t idx;
 	struct flexio_dpa_dev_queue queues[MAX_SCHEDULER_QUEUES];
 	size_t tenant_cycle_used[MAX_TENANT_NUM];
+	size_t tenant_cycle_target[MAX_TENANT_NUM];
 };
 
 typedef uint8_t eu_status;
@@ -74,6 +75,10 @@ struct offload_dispatch_info {
 extern struct dpa_thread_context dpa_thds_ctx[190];
 extern struct dpa_sche_context dpa_schs_ctx[32];
 extern struct offload_dispatch_info offload_info[190];
+
+#define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
+
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 100};
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 

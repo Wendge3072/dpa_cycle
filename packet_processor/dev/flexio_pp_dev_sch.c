@@ -1,5 +1,43 @@
 #include "flexio_pp_dev_utils.h"
 
+static void
+sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
+			  struct host2dev_packet_processor_data_sch *data_from_host)
+{
+	size_t tenants_num = data_from_host->tenants_num;
+	size_t threads_num_per_scheduler = data_from_host->threads_num_per_scheduler;
+	size_t base_cycle_budget = SCHED_PERIOD_CYCLES * threads_num_per_scheduler;
+	uint32_t sum_weight = 0;
+
+	if (tenants_num > MAX_TENANT_NUM) {
+		tenants_num = MAX_TENANT_NUM;
+	}
+
+	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
+		__atomic_store_n(&sch_ctx->tenant_cycle_used[t], 0, __ATOMIC_RELAXED);
+		sch_ctx->tenant_cycle_target[t] = 0;
+	}
+
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		sum_weight += cycle_weights[t];
+	}
+
+	if (tenants_num == 0) {
+		return;
+	}
+
+	if (sum_weight > 0) {
+		for (uint32_t t = 0; t < tenants_num; t++) {
+			sch_ctx->tenant_cycle_target[t] = base_cycle_budget * cycle_weights[t] / sum_weight;
+		}
+		return;
+	}
+
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		sch_ctx->tenant_cycle_target[t] = base_cycle_budget / tenants_num;
+	}
+}
+
 /* Initialize the app_ctx structure from the host data.
  *  data_from_host - pointer host2dev_packet_processor_data from host.
  */
@@ -10,9 +48,7 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	dpa_schs_ctx[i].packets_count = 0;
 	dpa_schs_ctx[i].idx = i;
 	dpa_schs_ctx[i].window_id = data_from_host->window_id;
-	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
-		__atomic_store_n(&dpa_schs_ctx[i].tenant_cycle_used[t], 0, __ATOMIC_RELAXED);
-	}
+	sch_init_cycle_accounting(&(dpa_schs_ctx[i]), data_from_host);
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 		dpa_schs_ctx[i].queues[j].sq_lkey = data_from_host->queues[j].sq_transf.wqd_mkey_id;
 		dpa_schs_ctx[i].queues[j].rq_lkey = data_from_host->queues[j].rq_transf.wqd_mkey_id;
