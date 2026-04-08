@@ -7,8 +7,8 @@ flexio_dev_event_handler_t flexio_pp_dev_32;
 __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 {	
 	struct host2dev_packet_processor_data_thd *data_from_host = (void *)thread_arg;
-	register int i = data_from_host->thd_id;
-	register struct offload_dispatch_info *thd_info = &offload_info[i];
+	int i = data_from_host->thd_id;
+	struct offload_dispatch_info *thd_info = &offload_info[i];
 	struct flexio_dev_thread_ctx *dtctx;	
 	struct flexio_dpa_dev_queue *thd_queue = &(dpa_thds_ctx[i].queue);
 	cq_ctx_t *wakeup_cq_ctx = &(thd_queue->rq_cq_ctx);
