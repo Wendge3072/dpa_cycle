@@ -18,7 +18,7 @@
  * 0: use the SQ paired with each scheduler-assigned queue.
  */
 #ifndef WORKER_TX_USE_PRIVATE_SQ
-#define WORKER_TX_USE_PRIVATE_SQ 0
+#define WORKER_TX_USE_PRIVATE_SQ 1
 #endif
 
 #ifndef WORKER_QUEUE_CYCLE_REPORT
