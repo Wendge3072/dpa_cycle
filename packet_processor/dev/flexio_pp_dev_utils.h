@@ -22,32 +22,11 @@
 #endif
 
 #ifndef WORKER_QUEUE_CYCLE_REPORT
-#define WORKER_QUEUE_CYCLE_REPORT 1
+#define WORKER_QUEUE_CYCLE_REPORT 0
 #endif
 
 #ifndef SCH_CYCLE_USAGE_REPORT
 #define SCH_CYCLE_USAGE_REPORT 0
-#endif
-
-/*
- * Hot-path restrict flag experiments in worker threads:
- * 0: do not profile the inner-loop restrict check
- * 1: report average cycles spent on the inner-loop restrict check
- */
-#ifndef WORKER_RESTRICT_CHECK_REPORT
-#define WORKER_RESTRICT_CHECK_REPORT 0
-#endif
-
-/*
- * Address source for the inner-loop restrict check in the worker:
- * 0: shared scheduler flag sch_ctx->restrict_tenant[q]
- * 1: worker-private shadow byte thd_ctx->restrict_probe_shadow[q]
- *
- * Mode 1 is for contention experiments only. It does not reflect live
- * scheduler restrictions during the current queue burst.
- */
-#ifndef WORKER_RESTRICT_CHECK_ADDR_MODE
-#define WORKER_RESTRICT_CHECK_ADDR_MODE 1
 #endif
 
 struct flexio_dpa_dev_queue {
