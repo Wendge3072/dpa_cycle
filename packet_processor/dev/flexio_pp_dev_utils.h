@@ -98,8 +98,10 @@ static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 100};
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
-static inline __attribute__((always_inline)) void
+static inline __attribute__((always_inline)) int
 pp_queue(struct flexio_dev_thread_ctx *dtctx,
+	 struct dpa_sche_context *sch_ctx,
+	 uint32_t tenant_id,
 	 struct flexio_dpa_dev_queue *rq_queue,
 	 sq_ctx_t *tx_sq_ctx,
 	 uint32_t tx_sq_number)
@@ -111,6 +113,15 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	register uint32_t rq_wqe_idx;
 	register uint32_t data_sz;
 	register char *rq_data;
+
+	/*
+	 * If the scheduler restricts this tenant mid-burst, leave the current
+	 * CQE/RQ WQE untouched so the same packet stays at the queue head and can
+	 * be retried in the next scheduling period.
+	 */
+	if (__atomic_load_n(&sch_ctx->restrict_tenant[tenant_id], __ATOMIC_ACQUIRE)) {
+		return 0;
+	}
 
 	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter);
 	data_sz = be32_to_cpu((volatile __be32)rq_cq_ctx->cqe->byte_cnt);
@@ -127,6 +138,7 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number);
 	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr);
 	com_step_cq(rq_cq_ctx);
+	return 1;
 }
 
 flexio_dev_rpc_handler_t thd_ctx_init;

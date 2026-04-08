@@ -54,6 +54,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	register size_t queue_burst = 0;
 	register sq_ctx_t *tx_sq_ctx;
 	register uint32_t tx_sq_number;
+	register int processed = 0;
 
 	flexio_dev_get_thread_ctx(&dtctx);
 	com_step_cq(wakeup_cq_ctx);
@@ -93,8 +94,11 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			while (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) != rq_queue->rq_cq_ctx.cq_hw_owner_bit &&
 			       queue_burst < WORKER_QUEUE_BURST_SIZE) {
 				cycle_delta = __dpa_thread_cycles();
-				pp_queue(dtctx, rq_queue, tx_sq_ctx, tx_sq_number);
+				processed = pp_queue(dtctx, sch_ctx, q, rq_queue, tx_sq_ctx, tx_sq_number);
 				cycle_delta = __dpa_thread_cycles() - cycle_delta; 
+				if (!processed) {
+					break;
+				}
 #if WORKER_QUEUE_CYCLE_REPORT
 				worker_cycle_report_accumulate(thd_ctx, q, cycle_delta);
 #endif
