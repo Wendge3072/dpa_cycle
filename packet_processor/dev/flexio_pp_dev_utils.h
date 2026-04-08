@@ -22,7 +22,11 @@
 #endif
 
 #ifndef WORKER_QUEUE_CYCLE_REPORT
-#define WORKER_QUEUE_CYCLE_REPORT 1
+#define WORKER_QUEUE_CYCLE_REPORT 0
+#endif
+
+#ifndef SCH_CYCLE_USAGE_REPORT
+#define SCH_CYCLE_USAGE_REPORT 1
 #endif
 
 struct flexio_dpa_dev_queue {
@@ -63,6 +67,9 @@ struct dpa_sche_context {
 	struct flexio_dpa_dev_queue queues[MAX_SCHEDULER_QUEUES];
 	size_t tenant_cycle_used[MAX_TENANT_NUM];
 	size_t tenant_cycle_target[MAX_TENANT_NUM];
+#if SCH_CYCLE_USAGE_REPORT
+	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
+#endif
 };
 
 typedef uint8_t eu_status;

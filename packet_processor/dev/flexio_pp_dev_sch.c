@@ -17,6 +17,9 @@ sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
 		__atomic_store_n(&sch_ctx->tenant_cycle_used[t], 0, __ATOMIC_RELAXED);
 		sch_ctx->tenant_cycle_target[t] = 0;
+#if SCH_CYCLE_USAGE_REPORT
+		sch_ctx->tenant_cycle_report_used[t] = 0;
+#endif
 	}
 
 	for (uint32_t t = 0; t < tenants_num; t++) {
@@ -150,12 +153,30 @@ sch_check_cycle_budget(struct dpa_sche_context *sch_ctx,
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		size_t tenant_cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_used[t], 0, __ATOMIC_ACQ_REL);
 
+#if SCH_CYCLE_USAGE_REPORT
+		sch_ctx->tenant_cycle_report_used[t] += tenant_cycle_used;
+#endif
+
 		if (tenant_cycle_used >= sch_ctx->tenant_cycle_target[t]) {
 			flexio_dev_print("sch %d tenant %u cycle over budget: used=%zu target=%zu\n",
 					 sch_id, t, tenant_cycle_used, sch_ctx->tenant_cycle_target[t]);
 		}
 	}
 }
+
+#if SCH_CYCLE_USAGE_REPORT
+static inline void
+sch_report_cycle_usage(struct dpa_sche_context *sch_ctx,
+		       int sch_id,
+		       uint32_t tenants_num)
+{
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		flexio_dev_print("sch %d cycle report: tenant %u total_used %8zu\n",
+				 sch_id, t, sch_ctx->tenant_cycle_report_used[t] / 1000);
+		sch_ctx->tenant_cycle_report_used[t] = 0;
+	}
+}
+#endif
 
 static inline void
 sch_check_workers(struct flexio_dev_thread_ctx *dtctx,
@@ -194,6 +215,9 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	size_t time_interval = 15;
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
 	register size_t next_sched_cycle = __dpa_thread_cycles() + SCHED_PERIOD_CYCLES;
+#if SCH_CYCLE_USAGE_REPORT
+	register size_t next_report_cycle = __dpa_thread_cycles() + DPA_FREQ_HZ;
+#endif
 	size_t now_cycle = 0;
 
 	flexio_dev_get_thread_ctx(&dtctx);
@@ -214,6 +238,12 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			sch_check_cycle_budget(this_sch_ctx, i, tenants_num);
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
 		}
+#if SCH_CYCLE_USAGE_REPORT
+		if (now_cycle >= next_report_cycle) {
+			sch_report_cycle_usage(this_sch_ctx, i, tenants_num);
+			next_report_cycle = now_cycle + DPA_FREQ_HZ;
+		}
+#endif
 	}
 
 	__dpa_thread_memory_writeback();
