@@ -153,13 +153,13 @@ sch_check_cycle_budget(struct dpa_sche_context *sch_ctx,
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		size_t current_used = 0;
 
-		if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_ACQUIRE)) {
+		if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED)) {
 			continue;
 		}
 
-		current_used = __atomic_load_n(&sch_ctx->busy_cycle[t], __ATOMIC_ACQUIRE);
+		current_used = __atomic_load_n(&sch_ctx->busy_cycle[t], __ATOMIC_RELAXED);
 		if (current_used >= sch_ctx->tenant_cycle_target[t]) {
-			__atomic_store_n(&sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELEASE);
+			__atomic_store_n(&sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELAXED);
 			// flexio_dev_print("sch %u tenant %u restricted: used %zu target %zu\n",
 			// 		 sch_ctx->idx, t, current_used, sch_ctx->tenant_cycle_target[t]);
 		}
@@ -171,9 +171,9 @@ sch_rollover_cycle_budget(struct dpa_sche_context *sch_ctx,
 			  uint32_t tenants_num)
 {
 	for (uint32_t t = 0; t < tenants_num; t++) {
-		size_t period_used = __atomic_exchange_n(&sch_ctx->busy_cycle[t], 0, __ATOMIC_ACQ_REL);
+		size_t period_used = __atomic_exchange_n(&sch_ctx->busy_cycle[t], 0, __ATOMIC_RELAXED);
 
-		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELEASE);
+		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
 #if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] += period_used;
 #endif

@@ -81,7 +81,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			restricted = &sch_ctx->restrict_tenant[q];
 			queue_burst = 0;
 			
-			if (__atomic_load_n(&sch_ctx->restrict_tenant[q], __ATOMIC_ACQUIRE)) {
+			if (__atomic_load_n(&sch_ctx->restrict_tenant[q], __ATOMIC_RELAXED)) {
 				continue;
 			}
 
