@@ -26,7 +26,7 @@
 #endif
 
 #ifndef SCH_CYCLE_USAGE_REPORT
-#define SCH_CYCLE_USAGE_REPORT 1
+#define SCH_CYCLE_USAGE_REPORT 0
 #endif
 
 struct flexio_dpa_dev_queue {
