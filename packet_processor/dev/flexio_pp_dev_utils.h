@@ -22,11 +22,11 @@
 #endif
 
 #ifndef WORKER_QUEUE_CYCLE_REPORT
-#define WORKER_QUEUE_CYCLE_REPORT 1
+#define WORKER_QUEUE_CYCLE_REPORT 0
 #endif
 
 #ifndef SCH_CYCLE_USAGE_REPORT
-#define SCH_CYCLE_USAGE_REPORT 0
+#define SCH_CYCLE_USAGE_REPORT 1
 #endif
 
 struct flexio_dpa_dev_queue {
