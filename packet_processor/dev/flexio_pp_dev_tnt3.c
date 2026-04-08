@@ -13,13 +13,13 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	struct flexio_dpa_dev_queue *thd_queue = &(dpa_thds_ctx[i].queue);
 	cq_ctx_t *wakeup_cq_ctx = &(thd_queue->rq_cq_ctx);
 	struct flexio_dpa_dev_queue *rq_queues[WORKER_QUEUES_PER_THREAD];
-	struct dpa_sche_context *sch_ctx;
+	register struct dpa_sche_context *sch_ctx;
 	register struct flexio_dpa_dev_queue *rq_queue = NULL;
 	register size_t pkt_count = 0;
 	register size_t cycle_delta = 0;
+	register size_t queue_burst = 0;
 	register sq_ctx_t *tx_sq_ctx;
 	register uint32_t tx_sq_number;
-	register size_t queue_burst = 0;
 
 	flexio_dev_get_thread_ctx(&dtctx);
 	com_step_cq(wakeup_cq_ctx);
@@ -52,9 +52,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 
 			while (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) != rq_queue->rq_cq_ctx.cq_hw_owner_bit &&
 			       queue_burst < WORKER_QUEUE_BURST_SIZE) {
-				// cycle_delta = __dpa_thread_cycles();
+				cycle_delta = __dpa_thread_cycles();
 				pp_queue(dtctx, rq_queue, tx_sq_ctx, tx_sq_number);
-				// cycle_delta = __dpa_thread_cycles() - cycle_delta; 
+				cycle_delta = __dpa_thread_cycles() - cycle_delta; 
 				/* Each worker queue slot corresponds to one tenant in the current 2-queue layout. */
 				// if (sch_ctx != NULL && q < MAX_TENANT_NUM) {
 				// 	__atomic_fetch_add(&sch_ctx->tenant_cycle_used[q], cycle_delta, __ATOMIC_RELAXED);
