@@ -122,7 +122,7 @@ worker_sleep:
 #if WORKER_QUEUE_CYCLE_REPORT
 	worker_cycle_report_print(i, thd_ctx);
 #endif
-	__dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
+	// __dpa_thread_fence(__DPA_MEMORY, __DPA_W, __DPA_W);
 	flexio_dev_cq_arm(dtctx, wakeup_cq_ctx->cq_idx, wakeup_cq_ctx->cq_number);
 	__atomic_store_n(&thd_info->status, EU_OFF, __ATOMIC_RELEASE);
 	flexio_dev_thread_reschedule();
