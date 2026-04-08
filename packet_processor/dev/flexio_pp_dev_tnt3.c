@@ -97,7 +97,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			       queue_burst < WORKER_QUEUE_BURST_SIZE) {
 				queue_burst++;
 				if (__atomic_load_n(&sch_ctx->restrict_tenant[q], __ATOMIC_RELAXED)) {
-					break;
+					continue;
 				}
 				cycle_delta = __dpa_thread_cycles();
 				pp_queue(dtctx, sch_ctx, q, rq_queue, tx_sq_ctx, tx_sq_number);
