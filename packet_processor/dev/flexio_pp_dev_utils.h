@@ -35,7 +35,7 @@
  * 1: report average cycles spent on the inner-loop restrict check
  */
 #ifndef WORKER_RESTRICT_CHECK_REPORT
-#define WORKER_RESTRICT_CHECK_REPORT 0
+#define WORKER_RESTRICT_CHECK_REPORT 1
 #endif
 
 /*
