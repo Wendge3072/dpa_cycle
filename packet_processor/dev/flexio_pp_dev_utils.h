@@ -65,8 +65,9 @@ struct dpa_sche_context {
 	uint32_t window_id;
 	uint32_t idx;
 	struct flexio_dpa_dev_queue queues[MAX_SCHEDULER_QUEUES];
-	size_t tenant_cycle_used[MAX_TENANT_NUM];
 	size_t tenant_cycle_target[MAX_TENANT_NUM];
+	uint8_t restrict_tenant[MAX_TENANT_NUM];
+	size_t busy_cycle[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
 	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
 #endif
