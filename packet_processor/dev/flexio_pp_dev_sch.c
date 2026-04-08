@@ -144,15 +144,9 @@ sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
 
 static inline void
 sch_check_cycle_budget(struct dpa_sche_context *sch_ctx,
-		       struct host2dev_packet_processor_data_sch *data_from_host)
+		       int sch_id,
+		       uint32_t tenants_num)
 {
-	int sch_id = data_from_host->sch_id;
-	size_t tenants_num = data_from_host->tenants_num;
-
-	// if (tenants_num > MAX_TENANT_NUM) {
-	// 	tenants_num = MAX_TENANT_NUM;
-	// }
-
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		size_t tenant_cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_used[t], 0, __ATOMIC_ACQ_REL);
 
@@ -165,12 +159,11 @@ sch_check_cycle_budget(struct dpa_sche_context *sch_ctx,
 
 static inline void
 sch_check_workers(struct flexio_dev_thread_ctx *dtctx,
-		  struct host2dev_packet_processor_data_sch *data_from_host)
+		  int sch_id,
+		  uint32_t threads_num_per_scheduler)
 {
-	int i = data_from_host->sch_id;
-
-	for (uint32_t worker_idx = 0; worker_idx < data_from_host->threads_num_per_scheduler; worker_idx++) {
-		uint32_t thd_id = i * data_from_host->threads_num_per_scheduler + worker_idx;
+	for (uint32_t worker_idx = 0; worker_idx < threads_num_per_scheduler; worker_idx++) {
+		uint32_t thd_id = sch_id * threads_num_per_scheduler + worker_idx;
 		struct offload_dispatch_info *thd_info = &offload_info[thd_id];
 		eu_status current_status = __atomic_load_n(&thd_info->status, __ATOMIC_ACQUIRE);
 
@@ -191,7 +184,11 @@ flexio_dev_event_handler_t flexio_scheduler_handle;
 __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	struct host2dev_packet_processor_data_sch *data_from_host = (void *)thread_arg;
 	struct flexio_dev_thread_ctx *dtctx;
-	int i = data_from_host->sch_id;
+	register int i = data_from_host->sch_id;
+	register uint32_t threads_num_per_scheduler = data_from_host->threads_num_per_scheduler;
+	register uint32_t tenants_num = data_from_host->tenants_num > MAX_TENANT_NUM ?
+				       MAX_TENANT_NUM : data_from_host->tenants_num;
+	register uint32_t num_queues = data_from_host->num_queues;
 	struct dpa_sche_context *this_sch_ctx = &(dpa_schs_ctx[i]);
 	int first_run = !data_from_host->not_first_run;
 	size_t time_interval = 15;
@@ -207,20 +204,20 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		data_from_host->not_first_run = 1;
 	}
 
-	sch_check_workers(dtctx, data_from_host);
+	sch_check_workers(dtctx, i, threads_num_per_scheduler);
 
 	while (__dpa_thread_cycles() < reschedule_cycle) {
-		sch_check_workers(dtctx, data_from_host);
+		sch_check_workers(dtctx, i, threads_num_per_scheduler);
 
 		now_cycle = __dpa_thread_cycles();
 		if (now_cycle >= next_sched_cycle) {
-			sch_check_cycle_budget(this_sch_ctx, data_from_host);
+			sch_check_cycle_budget(this_sch_ctx, i, tenants_num);
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
 		}
 	}
 
 	__dpa_thread_memory_writeback();
-	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
+	for (uint32_t j = 0; j < num_queues; j++) {
 		struct flexio_dpa_dev_queue *this_tenant = &(this_sch_ctx->queues[j]);
 		flexio_dev_cq_arm(dtctx, this_tenant->rq_cq_ctx.cq_idx, this_tenant->rq_cq_ctx.cq_number);
 	}
