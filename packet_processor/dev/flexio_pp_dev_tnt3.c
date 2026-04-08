@@ -10,8 +10,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	register int i = data_from_host->thd_id;
 	register struct offload_dispatch_info *thd_info = &offload_info[i];
 	struct flexio_dev_thread_ctx *dtctx;	
-	register struct flexio_dpa_dev_queue *thd_queue = &(dpa_thds_ctx[i].queue);
-	register cq_ctx_t *wakeup_cq_ctx = &(thd_queue->rq_cq_ctx);
+	struct flexio_dpa_dev_queue *thd_queue = &(dpa_thds_ctx[i].queue);
+	cq_ctx_t *wakeup_cq_ctx = &(thd_queue->rq_cq_ctx);
 	register size_t pkt_count = 0;
 	register size_t cycle_delta = 0;
 	struct flexio_dpa_dev_queue *rq_queues[WORKER_QUEUES_PER_THREAD];
