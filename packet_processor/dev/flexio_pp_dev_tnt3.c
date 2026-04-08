@@ -12,12 +12,11 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	struct flexio_dev_thread_ctx *dtctx;	
 	struct flexio_dpa_dev_queue *thd_queue = &(dpa_thds_ctx[i].queue);
 	cq_ctx_t *wakeup_cq_ctx = &(thd_queue->rq_cq_ctx);
+	struct flexio_dpa_dev_queue *rq_queues[WORKER_QUEUES_PER_THREAD];
+	struct dpa_sche_context *sch_ctx;
+	register struct flexio_dpa_dev_queue *rq_queue = NULL;
 	register size_t pkt_count = 0;
 	register size_t cycle_delta = 0;
-	struct flexio_dpa_dev_queue *rq_queues[WORKER_QUEUES_PER_THREAD];
-	register struct flexio_dpa_dev_queue *rq_queue = NULL;
-	struct dpa_sche_context *sch_ctx;
-
 	register sq_ctx_t *tx_sq_ctx;
 	register uint32_t tx_sq_number;
 	register size_t queue_burst = 0;
