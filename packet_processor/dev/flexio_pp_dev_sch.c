@@ -257,7 +257,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 		}
 #if SCH_CYCLE_USAGE_REPORT
 		if (now_cycle >= next_report_cycle) {
-			// sch_report_cycle_usage(this_sch_ctx, i, tenants_num);
+			sch_report_cycle_usage(this_sch_ctx, i, tenants_num);
 			next_report_cycle = now_cycle + DPA_FREQ_HZ;
 		}
 #endif
