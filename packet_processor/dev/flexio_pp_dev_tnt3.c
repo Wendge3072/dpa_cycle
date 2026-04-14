@@ -113,8 +113,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				/* Each worker queue slot corresponds to one tenant in the current 2-queue layout. */
 				__atomic_fetch_add(&sch_ctx->tenant_cycle_consumed[q], cycle_delta,
 						 __ATOMIC_RELAXED);
-				__atomic_fetch_add(&sch_ctx->tenant_bw_consumed[q], packet_size,
-						 __ATOMIC_RELAXED);
+				// __atomic_fetch_add(&sch_ctx->tenant_bw_consumed[q], packet_size,
+				// 		 __ATOMIC_RELAXED);
 				pkt_count++;
 				if (pkt_count >= WORKER_BATCH_SIZE) {
 					goto worker_sleep;
