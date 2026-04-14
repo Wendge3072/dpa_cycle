@@ -29,6 +29,10 @@
 #define SCH_CYCLE_USAGE_REPORT 1
 #endif
 
+#ifndef DEFAULT_LINK_BANDWIDTH_BPS
+#define DEFAULT_LINK_BANDWIDTH_BPS 90000000000ULL
+#endif
+
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
@@ -67,8 +71,10 @@ struct dpa_sche_context {
 	uint32_t idx;
 	struct flexio_dpa_dev_queue queues[MAX_SCHEDULER_QUEUES];
 	size_t tenant_cycle_target[MAX_TENANT_NUM];
+	size_t tenant_cycle_consumed[MAX_TENANT_NUM];
+	size_t tenant_bw_target[MAX_TENANT_NUM];
+	size_t tenant_bw_consumed[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
-	size_t busy_cycle[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
 	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
 #endif
@@ -95,11 +101,18 @@ extern struct offload_dispatch_info offload_info[190];
 
 #define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
 
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 0};
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 100};
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {3, 2};
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
-static inline __attribute__((always_inline)) void
+static inline __attribute__((always_inline)) uint32_t
+pp_get_packet_size(struct flexio_dpa_dev_queue *rq_queue)
+{
+	return be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt);
+}
+
+static inline __attribute__((always_inline)) uint32_t
 pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	 struct dpa_sche_context *sch_ctx,
 	 uint32_t tenant_id,
@@ -115,8 +128,11 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	register uint32_t data_sz;
 	register char *rq_data;
 
+	(void)sch_ctx;
+	(void)tenant_id;
+
 	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter);
-	data_sz = be32_to_cpu((volatile __be32)rq_cq_ctx->cqe->byte_cnt);
+	data_sz = pp_get_packet_size(rq_queue);
 	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
@@ -130,6 +146,8 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number);
 	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr);
 	com_step_cq(rq_cq_ctx);
+
+	return data_sz;
 }
 
 flexio_dev_rpc_handler_t thd_ctx_init;

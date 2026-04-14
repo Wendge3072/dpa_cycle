@@ -16,8 +16,8 @@ sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 
 	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
 		sch_ctx->tenant_cycle_target[t] = 0;
+		__atomic_store_n(&sch_ctx->tenant_cycle_consumed[t], 0, __ATOMIC_RELAXED);
 		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
-		__atomic_store_n(&sch_ctx->busy_cycle[t], 0, __ATOMIC_RELAXED);
 #if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] = 0;
 #endif
@@ -49,6 +49,56 @@ sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 	}
 }
 
+static void
+sch_init_bandwidth_accounting(struct dpa_sche_context *sch_ctx,
+			      struct host2dev_packet_processor_data_sch *data_from_host)
+{
+	int sch_id = data_from_host->sch_id;
+	size_t tenants_num = data_from_host->tenants_num;
+	size_t scheduler_num = data_from_host->scheduler_num ? data_from_host->scheduler_num : 1;
+	size_t per_period_total_budget =
+		(DEFAULT_LINK_BANDWIDTH_BPS / 8 / 1000) / scheduler_num;
+	uint32_t sum_weight = 0;
+
+	if (tenants_num > MAX_TENANT_NUM) {
+		tenants_num = MAX_TENANT_NUM;
+	}
+
+	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
+		sch_ctx->tenant_bw_target[t] = 0;
+		__atomic_store_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
+	}
+
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		sum_weight += bandwidth_weights[t];
+	}
+
+	if (tenants_num == 0) {
+		return;
+	}
+
+	if (sum_weight > 0) {
+		for (uint32_t t = 0; t < tenants_num; t++) {
+			size_t tenant_budget = per_period_total_budget * bandwidth_weights[t] / sum_weight;
+
+			sch_ctx->tenant_bw_target[t] = tenant_budget;
+			__atomic_store_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
+			flexio_dev_print("sch %d tenant %u bandwidth budget: target=%zuB period=1ms weight=%u\n",
+					 sch_id, t, tenant_budget, bandwidth_weights[t]);
+		}
+		return;
+	}
+
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		size_t tenant_budget = per_period_total_budget / tenants_num;
+
+		sch_ctx->tenant_bw_target[t] = tenant_budget;
+		__atomic_store_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
+		flexio_dev_print("sch %d tenant %u bandwidth budget: target=%zuB period=1ms weight=equal\n",
+				 sch_id, t, tenant_budget);
+	}
+}
+
 /* Initialize the app_ctx structure from the host data.
  *  data_from_host - pointer host2dev_packet_processor_data from host.
  */
@@ -60,6 +110,7 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	dpa_schs_ctx[i].idx = i;
 	dpa_schs_ctx[i].window_id = data_from_host->window_id;
 	sch_init_cycle_accounting(&(dpa_schs_ctx[i]), data_from_host);
+	sch_init_bandwidth_accounting(&(dpa_schs_ctx[i]), data_from_host);
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 		dpa_schs_ctx[i].queues[j].sq_lkey = data_from_host->queues[j].sq_transf.wqd_mkey_id;
 		dpa_schs_ctx[i].queues[j].rq_lkey = data_from_host->queues[j].rq_transf.wqd_mkey_id;
@@ -147,32 +198,35 @@ sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
 }
 
 static inline void
-sch_check_cycle_budget(struct dpa_sche_context *sch_ctx,
-		       uint32_t tenants_num)
+sch_check_budget(struct dpa_sche_context *sch_ctx,
+		 uint32_t tenants_num)
 {
 	for (uint32_t t = 0; t < tenants_num; t++) {
-		size_t current_used = 0;
+		size_t current_cycle_used = 0;
+		size_t current_bw_used = 0;
 
 		if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED)) {
 			continue;
 		}
 
-		current_used = __atomic_load_n(&sch_ctx->busy_cycle[t], __ATOMIC_RELAXED);
-		if (current_used >= sch_ctx->tenant_cycle_target[t]) {
+		current_cycle_used = __atomic_load_n(&sch_ctx->tenant_cycle_consumed[t], __ATOMIC_RELAXED);
+		current_bw_used = __atomic_load_n(&sch_ctx->tenant_bw_consumed[t], __ATOMIC_RELAXED);
+		if (current_cycle_used >= sch_ctx->tenant_cycle_target[t] ||
+		    current_bw_used >= sch_ctx->tenant_bw_target[t]) {
 			__atomic_store_n(&sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELAXED);
-			// flexio_dev_print("sch %u tenant %u restricted: used %zu target %zu\n",
-			// 		 sch_ctx->idx, t, current_used, sch_ctx->tenant_cycle_target[t]);
 		}
 	}
 }
 
 static inline void
-sch_rollover_cycle_budget(struct dpa_sche_context *sch_ctx,
-			  uint32_t tenants_num)
+sch_rollover_budget(struct dpa_sche_context *sch_ctx,
+		    uint32_t tenants_num)
 {
 	for (uint32_t t = 0; t < tenants_num; t++) {
-		size_t period_used = __atomic_exchange_n(&sch_ctx->busy_cycle[t], 0, __ATOMIC_RELAXED);
+		size_t period_used =
+			__atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0, __ATOMIC_RELAXED);
 
+		__atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
 		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
 #if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] += period_used;
@@ -248,11 +302,11 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	while (__dpa_thread_cycles() < reschedule_cycle) {
 		sch_check_workers(dtctx, i, threads_num_per_scheduler);
-		sch_check_cycle_budget(this_sch_ctx, tenants_num);
+		sch_check_budget(this_sch_ctx, tenants_num);
 
 		now_cycle = __dpa_thread_cycles();
 		if (now_cycle >= next_sched_cycle) {
-			sch_rollover_cycle_budget(this_sch_ctx, tenants_num);
+			sch_rollover_budget(this_sch_ctx, tenants_num);
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
 		}
 #if SCH_CYCLE_USAGE_REPORT
