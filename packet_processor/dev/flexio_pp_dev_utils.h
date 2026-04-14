@@ -132,7 +132,8 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	(void)tenant_id;
 
 	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter);
-	data_sz = pp_get_packet_size(rq_queue);
+	// data_sz = pp_get_packet_size(rq_queue);
+	data_sz = be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt);
 	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
