@@ -103,7 +103,7 @@ extern struct offload_dispatch_info offload_info[190];
 
 static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 100};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {72, 18};
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {70, 20};
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
