@@ -79,9 +79,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	for (;;) {
 		for (register uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
 			restricted = &sch_ctx->restrict_tenant[q];
-			if (__atomic_load_n(restricted, __ATOMIC_RELAXED)) {
-				continue;
-			}
+			// if (__atomic_load_n(restricted, __ATOMIC_RELAXED)) {
+			// 	continue;
+			// }
 
 			rq_queue = rq_queues[q];
 			queue_burst = 0;
