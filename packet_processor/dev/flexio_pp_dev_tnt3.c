@@ -101,12 +101,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				// 	break;
 				// 	// continue;
 				// }
-				cycle_delta = __dpa_thread_cycles();
+				// cycle_delta = __dpa_thread_cycles(); 
 				packet_size = pp_queue(dtctx, sch_ctx, q, rq_queue, tx_sq_ctx, tx_sq_number);
-				cycle_delta = __dpa_thread_cycles() - cycle_delta; 
-				// if (!processed) {
-				// 	break;
-				// }
+				// cycle_delta = __dpa_thread_cycles() - cycle_delta; 
 #if WORKER_QUEUE_CYCLE_REPORT
 				worker_cycle_report_accumulate(thd_ctx, q, cycle_delta);
 #endif
@@ -115,7 +112,6 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 				// 		 __ATOMIC_RELAXED);
 				// __atomic_fetch_add(&sch_ctx->tenant_bw_consumed[q], packet_size,
 				// 		 __ATOMIC_RELAXED);
-				// sch_ctx->tenant_bw_consumed[q] += packet_size;
 				pkt_count++;
 				if (pkt_count >= WORKER_BATCH_SIZE) {
 					goto worker_sleep;
