@@ -61,7 +61,7 @@
 #define DATA_IDX_MASK ((1 << (LOG_Q_DEPTH)) - 1)
 
 /* SQ/RQ data entry byte size is 2048B (enough for ethernet packet data). */
-#define LOG_Q_DATA_ENTRY_BSIZE 11
+#define LOG_Q_DATA_ENTRY_BSIZE 9
 /* SQ/RQ data entry byte size log to value. */
 #define Q_DATA_ENTRY_BSIZE L2V(LOG_Q_DATA_ENTRY_BSIZE)
 /* SQ/RQ DATA byte size is queue depth times entry byte size. */
