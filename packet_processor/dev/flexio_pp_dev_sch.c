@@ -7,7 +7,7 @@ sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 	int sch_id = data_from_host->sch_id;
 	size_t tenants_num = data_from_host->tenants_num;
 	size_t threads_num_per_scheduler = data_from_host->threads_num_per_scheduler;
-	size_t base_cycle_budget = SCHED_PERIOD_CYCLES * threads_num_per_scheduler * 8000 / 10000;
+	size_t base_cycle_budget = SCHED_PERIOD_CYCLES * threads_num_per_scheduler * 7850 / 10000;
 	uint32_t sum_weight = 0;
 
 	if (tenants_num > MAX_TENANT_NUM) {
