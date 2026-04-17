@@ -38,7 +38,7 @@
 
 /* Scheduler configurations */
 #define MAX_SCHEDULER_QUEUES 16
-#define WORKER_QUEUES_PER_THREAD 2
+#define WORKER_QUEUES_PER_THREAD 1
 #define MAX_TENANT_NUM 2
 #define DPA_FREQ_HZ 1800000000ULL  // 1.8GHz
 

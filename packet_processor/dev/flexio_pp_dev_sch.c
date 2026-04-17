@@ -82,14 +82,11 @@ sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
 
 	for (uint32_t worker_idx = 0; worker_idx < data_from_host->threads_num_per_scheduler; worker_idx++) {
 		uint32_t thd_id = i * data_from_host->threads_num_per_scheduler + worker_idx;
-		uint32_t base_queue_idx = worker_idx * WORKER_QUEUES_PER_THREAD;
+		uint32_t queue_idx = worker_idx;
 		struct offload_dispatch_info *thd_info = &offload_info[thd_id];
 
-		__atomic_store_n(&thd_info->assigned_queues[0],
-				 &(this_sch_ctx->queues[base_queue_idx]),
-				 __ATOMIC_RELAXED);
-		__atomic_store_n(&thd_info->assigned_queues[1],
-				 &(this_sch_ctx->queues[base_queue_idx + 1]),
+		__atomic_store_n(&thd_info->assigned_queue,
+				 &(this_sch_ctx->queues[queue_idx]),
 				 __ATOMIC_RELAXED);
 		thd_info->wakeup_cq_num = dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number;
 	}

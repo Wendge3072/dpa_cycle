@@ -64,7 +64,7 @@ enum {
 };
 
 struct offload_dispatch_info {
-	struct flexio_dpa_dev_queue *assigned_queues[WORKER_QUEUES_PER_THREAD];
+	struct flexio_dpa_dev_queue *assigned_queue;
 	uint32_t wakeup_cq_num;
 	eu_status status;
 };

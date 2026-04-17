@@ -30,11 +30,11 @@ int main(int argc, char **argv)
 	}
 
 	threads_num = threads_num_per_scheduler * scheduler_num;
-	scheduler_queue_count = threads_num_per_scheduler * WORKER_QUEUES_PER_THREAD;
+	scheduler_queue_count = threads_num_per_scheduler;
 
 	if (scheduler_queue_count > MAX_SCHEDULER_QUEUES) {
-		printf("Invalid threads_num_per_scheduler value. Max workers per scheduler is %d when each worker owns %d queues.\n",
-		       MAX_SCHEDULER_QUEUES / WORKER_QUEUES_PER_THREAD, WORKER_QUEUES_PER_THREAD);
+		printf("Invalid threads_num_per_scheduler value. Max workers per scheduler is %d when each worker owns %d queue(s).\n",
+		       MAX_SCHEDULER_QUEUES, WORKER_QUEUES_PER_THREAD);
 		return -1;
 	}
 
