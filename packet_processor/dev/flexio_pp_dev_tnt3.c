@@ -78,13 +78,13 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 
 	for (;;) {
 		for (register uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
-			rq_queue = rq_queues[q];
 			restricted = &sch_ctx->restrict_tenant[q];
+			if (__atomic_load_n(restricted, __ATOMIC_RELAXED)) {
+				continue;
+			}
+
+			rq_queue = rq_queues[q];
 			queue_burst = 0;
-			
-			// if (__atomic_load_n(restricted, __ATOMIC_RELAXED)) {
-			// 	continue;
-			// }
 
 #if WORKER_TX_USE_PRIVATE_SQ
 			tx_sq_ctx = &(thd_queue->sq_ctx);
@@ -97,21 +97,21 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			while (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) != rq_queue->rq_cq_ctx.cq_hw_owner_bit &&
 			       queue_burst < WORKER_QUEUE_BURST_SIZE) {
 				queue_burst++;
-				// if (__atomic_load_n(restricted, __ATOMIC_RELAXED)) {
-				// 	break;
-				// 	// continue;
-				// }
-				// cycle_delta = __dpa_thread_cycles(); 
+				if (__atomic_load_n(restricted, __ATOMIC_RELAXED)) {
+					break;
+					// continue;
+				}
+				cycle_delta = __dpa_thread_cycles();
 				packet_size = pp_queue(dtctx, sch_ctx, q, rq_queue, tx_sq_ctx, tx_sq_number);
-				// cycle_delta = __dpa_thread_cycles() - cycle_delta; 
+				cycle_delta = __dpa_thread_cycles() - cycle_delta; 
 #if WORKER_QUEUE_CYCLE_REPORT
 				worker_cycle_report_accumulate(thd_ctx, q, cycle_delta);
 #endif
 				/* Each worker queue slot corresponds to one tenant in the current 2-queue layout. */
-				// __atomic_fetch_add(&sch_ctx->tenant_cycle_consumed[q], cycle_delta,
-				// 		 __ATOMIC_RELAXED);
-				// __atomic_fetch_add(&sch_ctx->tenant_bw_consumed[q], packet_size,
-				// 		 __ATOMIC_RELAXED);
+				__atomic_fetch_add(&sch_ctx->tenant_cycle_consumed[q], cycle_delta,
+						 __ATOMIC_RELAXED);
+				__atomic_fetch_add(&sch_ctx->tenant_bw_consumed[q], packet_size,
+						 __ATOMIC_RELAXED);
 				pkt_count++;
 				if (pkt_count >= WORKER_BATCH_SIZE) {
 					goto worker_sleep;
