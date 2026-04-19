@@ -198,8 +198,7 @@ sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
 }
 
 static inline void
-sch_check_budget(struct dpa_sche_context *sch_ctx,
-		 uint32_t tenants_num)
+sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 {
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		size_t current_cycle_used = 0;

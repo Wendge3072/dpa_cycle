@@ -102,7 +102,7 @@ extern struct offload_dispatch_info offload_info[190];
 #define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
 
 static uint32_t cycle_weights[MAX_TENANT_NUM] = {100, 100};
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {70, 20}; 
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {70, 00}; 
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
