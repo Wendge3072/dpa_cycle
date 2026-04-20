@@ -30,7 +30,7 @@
 #endif
 
 #ifndef DEFAULT_LINK_BANDWIDTH_BPS
-#define DEFAULT_LINK_BANDWIDTH_BPS 90000000000ULL
+#define DEFAULT_LINK_BANDWIDTH_BPS 70000000000ULL
 #endif
 
 struct flexio_dpa_dev_queue {
