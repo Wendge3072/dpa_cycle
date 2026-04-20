@@ -316,7 +316,6 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			sch_report_cycle_usage(this_sch_ctx, i, tenants_num);
 			flexio_dev_print("sch %d iteration total: %zu\n", i, iteration_total);
 			iteration_total = 0;
-			schedual_num = 0;
 			next_report_cycle = now_cycle + DPA_FREQ_HZ;
 		}
 #endif
