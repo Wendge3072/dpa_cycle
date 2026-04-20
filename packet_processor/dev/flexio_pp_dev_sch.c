@@ -299,18 +299,27 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	sch_check_workers(dtctx, i, threads_num_per_scheduler);
 
+	int iteration_num = 0, schedual_num = 0;
+	size_t iteration_total = 0;
 	while (__dpa_thread_cycles() < reschedule_cycle) {
 		sch_check_workers(dtctx, i, threads_num_per_scheduler);
 		sch_check_budget(this_sch_ctx, tenants_num);
+		iteration_num ++;
 
 		now_cycle = __dpa_thread_cycles();
 		if (now_cycle >= next_sched_cycle) {
+			iteration_total += iteration_num;
+			schedual_num++;
+			iteration_num = 0;
 			sch_rollover_budget(this_sch_ctx, tenants_num);
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
 		}
 #if SCH_CYCLE_USAGE_REPORT
 		if (now_cycle >= next_report_cycle) {
 			sch_report_cycle_usage(this_sch_ctx, i, tenants_num);
+			flexio_dev_print("sch %d iteration total: %zu\n", i, iteration_total/schedual_num);
+			iteration_total = 0;
+			schedual_num = 0;
 			next_report_cycle = now_cycle + DPA_FREQ_HZ;
 		}
 #endif
