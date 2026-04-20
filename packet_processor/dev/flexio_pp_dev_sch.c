@@ -317,7 +317,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 #if SCH_CYCLE_USAGE_REPORT
 		if (now_cycle >= next_report_cycle) {
 			sch_report_cycle_usage(this_sch_ctx, i, tenants_num);
-			flexio_dev_print("sch %d iteration total: %zu\n", i, iteration_total/schedual_num);
+			flexio_dev_print("sch %d iteration total: %zu, schedule num: %zu\n", i, iteration_total/schedual_num, schedual_num);
 			iteration_total = 0;
 			schedual_num = 0;
 			next_report_cycle = now_cycle + DPA_FREQ_HZ;
