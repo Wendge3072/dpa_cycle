@@ -198,26 +198,6 @@ sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
 }
 
 static inline void
-sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
-{
-	for (uint32_t t = 0; t < tenants_num; t++) {
-		size_t current_cycle_used = 0;
-		size_t current_bw_used = 0;
-
-		if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED)) {
-			continue;
-		}
-
-		current_cycle_used = __atomic_load_n(&sch_ctx->tenant_cycle_consumed[t], __ATOMIC_RELAXED);
-		current_bw_used = __atomic_load_n(&sch_ctx->tenant_bw_consumed[t], __ATOMIC_RELAXED);
-		if (current_cycle_used >= sch_ctx->tenant_cycle_target[t] ||
-		    current_bw_used >= sch_ctx->tenant_bw_target[t]) {
-			__atomic_store_n(&sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELAXED);
-		}
-	}
-}
-
-static inline void
 sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		    uint32_t tenants_num)
 {
@@ -301,7 +281,6 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 
 	while (__dpa_thread_cycles() < reschedule_cycle) {
 		sch_check_workers(dtctx, i, threads_num_per_scheduler);
-		sch_check_budget(this_sch_ctx, tenants_num);
 
 		now_cycle = __dpa_thread_cycles();
 		if (now_cycle >= next_sched_cycle) {

@@ -36,6 +36,26 @@ worker_cycle_report_print(int thd_id,
 }
 #endif
 
+static inline void
+worker_update_budget_and_restrict(struct dpa_sche_context *sch_ctx,
+				      uint32_t tenant_id,
+				      size_t cycle_delta,
+				      size_t packet_size)
+{
+	size_t current_cycle_used =
+		__atomic_fetch_add(&sch_ctx->tenant_cycle_consumed[tenant_id],
+				       cycle_delta, __ATOMIC_RELAXED) + cycle_delta;
+	size_t current_bw_used =
+		__atomic_fetch_add(&sch_ctx->tenant_bw_consumed[tenant_id],
+				       packet_size, __ATOMIC_RELAXED) + packet_size;
+
+	if (current_cycle_used >= sch_ctx->tenant_cycle_target[tenant_id] ||
+	    current_bw_used >= sch_ctx->tenant_bw_target[tenant_id]) {
+		__atomic_store_n(&sch_ctx->restrict_tenant[tenant_id], 1,
+				 __ATOMIC_RELAXED);
+	}
+}
+
 flexio_dev_event_handler_t flexio_pp_dev_32;
 __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 {	
@@ -107,11 +127,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 #if WORKER_QUEUE_CYCLE_REPORT
 				worker_cycle_report_accumulate(thd_ctx, q, cycle_delta);
 #endif
-				/* Each worker queue slot corresponds to one tenant in the current 2-queue layout. */
-				__atomic_fetch_add(&sch_ctx->tenant_cycle_consumed[q], cycle_delta,
-						 __ATOMIC_RELAXED);
-				__atomic_fetch_add(&sch_ctx->tenant_bw_consumed[q], packet_size,
-						 __ATOMIC_RELAXED);
+				/* Update per-tenant accounting and clamp immediately on the worker side. */
+				worker_update_budget_and_restrict(sch_ctx, q, cycle_delta, packet_size);
 				pkt_count++;
 				if (pkt_count >= WORKER_BATCH_SIZE) {
 					goto worker_sleep;
