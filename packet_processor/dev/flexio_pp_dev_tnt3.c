@@ -1,7 +1,7 @@
 #include "flexio_pp_dev_utils.h"
 
 #define WORKER_BATCH_SIZE 1048576UL
-#define WORKER_QUEUE_BURST_SIZE (Q_DEPTH * 2UL)
+#define WORKER_QUEUE_BURST_SIZE (Q_DEPTH * 1UL)
 
 flexio_dev_event_handler_t flexio_pp_dev_32;
 __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
