@@ -1,6 +1,6 @@
 #include "flexio_pp_dev_utils.h"
 
-#define WORKER_QUEUE_BURST_SIZE 256
+#define WORKER_QUEUE_BURST_SIZE 192
 #define WORKER_BATCH_SIZE 1048576UL
 
 #if WORKER_QUEUE_BURST_REPORT
