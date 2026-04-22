@@ -29,6 +29,10 @@
 #define SCH_CYCLE_USAGE_REPORT 1
 #endif
 
+#ifndef SCH_OVER_BUDGET_RATIO_REPORT
+#define SCH_OVER_BUDGET_RATIO_REPORT 0
+#endif
+
 #ifndef DEFAULT_LINK_BANDWIDTH_BPS
 #define DEFAULT_LINK_BANDWIDTH_BPS 80000000000ULL
 #endif
@@ -77,6 +81,12 @@ struct dpa_sche_context {
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
 	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
+#if SCH_OVER_BUDGET_RATIO_REPORT
+	size_t tenant_cycle_report_budget[MAX_TENANT_NUM];
+	size_t tenant_cycle_report_over_budget[MAX_TENANT_NUM];
+	size_t tenant_bw_report_budget[MAX_TENANT_NUM];
+	size_t tenant_bw_report_over_budget[MAX_TENANT_NUM];
+#endif
 #endif
 };
 

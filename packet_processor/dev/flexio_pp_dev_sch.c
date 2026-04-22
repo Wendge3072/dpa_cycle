@@ -1,5 +1,21 @@
 #include "flexio_pp_dev_utils.h"
 
+#if SCH_CYCLE_USAGE_REPORT && SCH_OVER_BUDGET_RATIO_REPORT
+#define SCH_RATIO_SCALE_100TH_PCT 10000ULL
+
+static inline size_t
+sch_scaled_percent_100ths(size_t numerator, size_t denominator)
+{
+	if (!denominator) {
+		return 0;
+	}
+
+	return (size_t)(((unsigned long long)numerator * SCH_RATIO_SCALE_100TH_PCT +
+			 (unsigned long long)denominator / 2) /
+			(unsigned long long)denominator);
+}
+#endif
+
 static void
 sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 			  struct host2dev_packet_processor_data_sch *data_from_host)
@@ -20,6 +36,12 @@ sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
 #if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] = 0;
+#if SCH_OVER_BUDGET_RATIO_REPORT
+		sch_ctx->tenant_cycle_report_budget[t] = 0;
+		sch_ctx->tenant_cycle_report_over_budget[t] = 0;
+		sch_ctx->tenant_bw_report_budget[t] = 0;
+		sch_ctx->tenant_bw_report_over_budget[t] = 0;
+#endif
 #endif
 	}
 
@@ -203,6 +225,8 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		size_t current_cycle_used = 0;
 		size_t current_bw_used = 0;
+		size_t cycle_target = sch_ctx->tenant_cycle_target[t];
+		size_t bw_target = sch_ctx->tenant_bw_target[t];
 
 		if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED)) {
 			continue;
@@ -210,8 +234,18 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 
 		current_cycle_used = __atomic_load_n(&sch_ctx->tenant_cycle_consumed[t], __ATOMIC_RELAXED);
 		current_bw_used = __atomic_load_n(&sch_ctx->tenant_bw_consumed[t], __ATOMIC_RELAXED);
-		if (current_cycle_used >= sch_ctx->tenant_cycle_target[t] ||
-		    current_bw_used >= sch_ctx->tenant_bw_target[t]) {
+		if (current_cycle_used >= cycle_target || current_bw_used >= bw_target) {
+#if SCH_CYCLE_USAGE_REPORT && SCH_OVER_BUDGET_RATIO_REPORT
+			if (current_cycle_used > cycle_target) {
+				sch_ctx->tenant_cycle_report_over_budget[t] +=
+					current_cycle_used - cycle_target;
+			}
+
+			if (current_bw_used > bw_target) {
+				sch_ctx->tenant_bw_report_over_budget[t] +=
+					current_bw_used - bw_target;
+			}
+#endif
 			__atomic_store_n(&sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELAXED);
 		}
 	}
@@ -229,6 +263,10 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
 #if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] += period_used;
+#if SCH_OVER_BUDGET_RATIO_REPORT
+		sch_ctx->tenant_cycle_report_budget[t] += sch_ctx->tenant_cycle_target[t];
+		sch_ctx->tenant_bw_report_budget[t] += sch_ctx->tenant_bw_target[t];
+#endif
 #endif
 	}
 }
@@ -240,8 +278,28 @@ sch_report_cycle_usage(struct dpa_sche_context *sch_ctx,
 		       uint32_t tenants_num)
 {
 	for (uint32_t t = 0; t < tenants_num; t++) {
+#if SCH_OVER_BUDGET_RATIO_REPORT
+		size_t cycle_ratio_100ths = sch_scaled_percent_100ths(
+			sch_ctx->tenant_cycle_report_over_budget[t],
+			sch_ctx->tenant_cycle_report_budget[t]);
+		size_t bw_ratio_100ths = sch_scaled_percent_100ths(
+			sch_ctx->tenant_bw_report_over_budget[t],
+			sch_ctx->tenant_bw_report_budget[t]);
+
+		flexio_dev_print("sch %d cycle report: tenant %u total_used %8zu cycle_over %8zu ratio %zu.%02zu%% bw_over %8zuB bw_ratio %zu.%02zu%%\n",
+				 sch_id, t, sch_ctx->tenant_cycle_report_used[t] / 1000,
+				 sch_ctx->tenant_cycle_report_over_budget[t] / 1000,
+				 cycle_ratio_100ths / 100, cycle_ratio_100ths % 100,
+				 sch_ctx->tenant_bw_report_over_budget[t],
+				 bw_ratio_100ths / 100, bw_ratio_100ths % 100);
+		sch_ctx->tenant_cycle_report_budget[t] = 0;
+		sch_ctx->tenant_cycle_report_over_budget[t] = 0;
+		sch_ctx->tenant_bw_report_budget[t] = 0;
+		sch_ctx->tenant_bw_report_over_budget[t] = 0;
+#else
 		flexio_dev_print("sch %d cycle report: tenant %u total_used %8zu\n",
 				 sch_id, t, sch_ctx->tenant_cycle_report_used[t] / 1000);
+#endif
 		sch_ctx->tenant_cycle_report_used[t] = 0;
 	}
 }
