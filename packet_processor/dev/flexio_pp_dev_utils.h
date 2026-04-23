@@ -38,7 +38,7 @@
 
 #define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
 #ifndef WC_BUDGET_CAP_NUM
-#define WC_BUDGET_CAP_NUM 6
+#define WC_BUDGET_CAP_NUM 4
 #endif
 #ifndef WC_BUDGET_CAP_DEN
 #define WC_BUDGET_CAP_DEN 2
