@@ -29,6 +29,11 @@
 #define SCH_CYCLE_USAGE_REPORT 1
 #endif
 
+/* Report scheduler main-loop iterations per scheduling period once per second. */
+#ifndef SCH_LOOP_ITER_REPORT
+#define SCH_LOOP_ITER_REPORT 1
+#endif
+
 #ifndef DEFAULT_LINK_BANDWIDTH_BPS
 #define DEFAULT_LINK_BANDWIDTH_BPS 80000000000ULL
 #endif
@@ -104,6 +109,11 @@ struct dpa_sche_context {
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
 	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
+#endif
+#if SCH_LOOP_ITER_REPORT
+	size_t sched_loop_current;
+	size_t sched_loop_report_periods;
+	size_t sched_loop_report_total;
 #endif
 };
 

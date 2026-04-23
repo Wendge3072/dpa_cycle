@@ -145,6 +145,11 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	dpa_schs_ctx[i].window_id = data_from_host->window_id;
 	sch_init_cycle_accounting(&(dpa_schs_ctx[i]), data_from_host);
 	sch_init_bandwidth_accounting(&(dpa_schs_ctx[i]), data_from_host);
+#if SCH_LOOP_ITER_REPORT
+	dpa_schs_ctx[i].sched_loop_current = 0;
+	dpa_schs_ctx[i].sched_loop_report_periods = 0;
+	dpa_schs_ctx[i].sched_loop_report_total = 0;
+#endif
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 		dpa_schs_ctx[i].queues[j].sq_lkey = data_from_host->queues[j].sq_transf.wqd_mkey_id;
 		dpa_schs_ctx[i].queues[j].rq_lkey = data_from_host->queues[j].rq_transf.wqd_mkey_id;
@@ -396,7 +401,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	size_t time_interval = 15;
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
 	register size_t next_sched_cycle = __dpa_thread_cycles() + SCHED_PERIOD_CYCLES;
-#if SCH_CYCLE_USAGE_REPORT
+#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT
 	register size_t next_report_cycle = __dpa_thread_cycles() + DPA_FREQ_HZ;
 #endif
 	size_t now_cycle = 0;
@@ -412,17 +417,36 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	sch_check_workers(dtctx, i, threads_num_per_scheduler);
 
 	while (__dpa_thread_cycles() < reschedule_cycle) {
+#if SCH_LOOP_ITER_REPORT
+		this_sch_ctx->sched_loop_current++;
+#endif
 		sch_check_workers(dtctx, i, threads_num_per_scheduler);
 		sch_check_budget(this_sch_ctx, tenants_num);
 
 		now_cycle = __dpa_thread_cycles();
 		if (now_cycle >= next_sched_cycle) {
+#if SCH_LOOP_ITER_REPORT
+			this_sch_ctx->sched_loop_report_total += this_sch_ctx->sched_loop_current;
+			this_sch_ctx->sched_loop_current = 0;
+			this_sch_ctx->sched_loop_report_periods++;
+#endif
 			sch_rollover_budget(this_sch_ctx, tenants_num);
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
 		}
-#if SCH_CYCLE_USAGE_REPORT
+#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT
 		if (now_cycle >= next_report_cycle) {
+#if SCH_CYCLE_USAGE_REPORT
 			sch_report_cycle_usage(this_sch_ctx, i, tenants_num);
+#endif
+#if SCH_LOOP_ITER_REPORT
+			size_t periods = this_sch_ctx->sched_loop_report_periods;
+			size_t avg = periods ? this_sch_ctx->sched_loop_report_total / periods : 0;
+
+			flexio_dev_print("sch %d loop report: periods=%zu avg=%zu\n",
+					 i, periods, avg);
+			this_sch_ctx->sched_loop_report_periods = 0;
+			this_sch_ctx->sched_loop_report_total = 0;
+#endif
 			next_report_cycle = now_cycle + DPA_FREQ_HZ;
 		}
 #endif
