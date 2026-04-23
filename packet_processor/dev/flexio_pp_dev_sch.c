@@ -304,10 +304,11 @@ sch_rollover_resource_budget(size_t resource_target[MAX_TENANT_NUM],
 		}
 
 		/* Borrow only enough to reach cap, and never more than the pool has. */
-		borrow = cap - resource_budget[t];
-		if (borrow > shared_pool) {
-			borrow = shared_pool;
-		}
+		// borrow = cap - resource_budget[t];
+		// if (borrow > shared_pool) {
+		// 	borrow = shared_pool;
+		// }
+		borrow = min(cap - resource_budget[t], shared_pool);
 		resource_budget[t] += borrow;
 		shared_pool -= borrow;
 	}
