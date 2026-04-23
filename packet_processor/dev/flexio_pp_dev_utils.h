@@ -30,7 +30,7 @@
 #endif
 
 #ifndef DEFAULT_LINK_BANDWIDTH_BPS
-#define DEFAULT_LINK_BANDWIDTH_BPS 90000000000ULL
+#define DEFAULT_LINK_BANDWIDTH_BPS 80000000000ULL
 #endif
 
 #define WORKER_BATCH_SIZE 1048576UL
@@ -38,9 +38,9 @@
 
 #define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
 
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {30, 70};
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {60, 40};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {80, 10}; 
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {40, 60};
 
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
