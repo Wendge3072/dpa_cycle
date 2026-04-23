@@ -44,9 +44,9 @@
 #define WC_BUDGET_CAP_DEN 2
 #endif
 
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {50, 50};
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {30, 70};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {80, 10}; 
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {30, 60};
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
 
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
