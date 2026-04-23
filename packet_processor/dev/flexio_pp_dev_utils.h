@@ -33,6 +33,15 @@
 #define DEFAULT_LINK_BANDWIDTH_BPS 90000000000ULL
 #endif
 
+#define WORKER_BATCH_SIZE 1048576UL
+#define WORKER_QUEUE_BURST_SIZE (Q_DEPTH * 2UL)
+
+#define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
+
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {30, 70};
+// static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {80, 10}; 
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
+
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
@@ -98,12 +107,6 @@ struct offload_dispatch_info {
 extern struct dpa_thread_context dpa_thds_ctx[190];
 extern struct dpa_sche_context dpa_schs_ctx[32];
 extern struct offload_dispatch_info offload_info[190];
-
-#define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
-
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {30, 70};
-// static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {80, 10}; 
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
