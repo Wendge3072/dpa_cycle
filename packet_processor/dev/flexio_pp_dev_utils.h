@@ -37,6 +37,12 @@
 #define WORKER_QUEUE_BURST_SIZE (128)
 
 #define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
+#ifndef WC_BUDGET_CAP_NUM
+#define WC_BUDGET_CAP_NUM 3
+#endif
+#ifndef WC_BUDGET_CAP_DEN
+#define WC_BUDGET_CAP_DEN 2
+#endif
 
 static uint32_t cycle_weights[MAX_TENANT_NUM] = {30, 70};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {80, 10}; 
@@ -80,8 +86,12 @@ struct dpa_sche_context {
 	uint32_t idx;
 	struct flexio_dpa_dev_queue queues[MAX_SCHEDULER_QUEUES];
 	size_t tenant_cycle_target[MAX_TENANT_NUM];
+	size_t tenant_cycle_budget[MAX_TENANT_NUM];
+	size_t tenant_cycle_budget_cap[MAX_TENANT_NUM];
 	size_t tenant_cycle_consumed[MAX_TENANT_NUM];
 	size_t tenant_bw_target[MAX_TENANT_NUM];
+	size_t tenant_bw_budget[MAX_TENANT_NUM];
+	size_t tenant_bw_budget_cap[MAX_TENANT_NUM];
 	size_t tenant_bw_consumed[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
