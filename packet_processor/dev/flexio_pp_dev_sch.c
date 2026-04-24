@@ -132,6 +132,8 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		sch_budget_receive(&sch_ctx->tenant_cycle_budget[t],
 				   sch_ctx->tenant_cycle_budget_cap[t],
 				   cycle_extra[t]);
+	}
+	for(int t = 0; t < tenants_num; t++){
 		sch_budget_receive(&sch_ctx->tenant_bw_budget[t],
 				   sch_ctx->tenant_bw_budget_cap[t],
 				   bw_extra[t]);
