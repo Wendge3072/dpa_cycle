@@ -13,59 +13,45 @@
 #include "../flexio_pp_com.h"
 
 /*
- * Worker TX SQ selection:
- * 1: use the worker thread's private SQ.
- * 0: use the SQ paired with each scheduler-assigned queue.
- */
-#ifndef WORKER_TX_USE_PRIVATE_SQ
+0 表示使用调度器分配的队列 ✅
+1 表示使用线程私有队列 ❌
+*/
 #define WORKER_TX_USE_PRIVATE_SQ 0
-#endif
 
-#ifndef WORKER_QUEUE_CYCLE_REPORT
+/*
+worker 线程每 reschedule 汇报数据包平均处理cycle的开关
+*/
 #define WORKER_QUEUE_CYCLE_REPORT 0
-#endif
 
-#ifndef SCH_CYCLE_USAGE_REPORT
+/*
+sch 线程每秒钟汇报租户 cycle 使用量的开关
+*/
 #define SCH_CYCLE_USAGE_REPORT 1
-#endif
 
-/* Report sch_rollover_budget average cost per second in DPA cycles. */
-#ifndef SCH_ROLLOVER_COST_REPORT
+/* 
+sch 线程每秒钟汇报 设置资源预算 开销的开关
+*/
 #define SCH_ROLLOVER_COST_REPORT 1
-#endif
 
-/* Report scheduler main-loop iterations per scheduling period once per second. */
-#ifndef SCH_LOOP_ITER_REPORT
-#define SCH_LOOP_ITER_REPORT 1
-#endif
+/* 
+sch 线程每秒钟汇报每调度周期“资源检查”循环迭代次数的开关
+*/
+#define SCH_LOOP_ITER_REPORT 0
 
-#ifndef DEFAULT_LINK_BANDWIDTH_BPS
+/*
+0 不使用 work-conserving
+1 使用 work-conserving
+*/
+#define SCH_ROLLOVER_WORK_CONSERVING 0
+
 #define DEFAULT_LINK_BANDWIDTH_BPS 80000000000ULL
-#endif
-
-#ifndef MAX_CYCLE_PERCENTAGE 
 #define MAX_CYCLE_PERCENTAGE 7815
-#endif
-
-#ifndef MAX_CYCLE_TOTAL
 #define MAX_CYCLE_TOTAL 10000
-#endif
-
 #define WORKER_BATCH_SIZE 1048576UL
 #define WORKER_QUEUE_BURST_SIZE (128)
-
 #define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
-#ifndef WC_BUDGET_CAP_NUM
 #define WC_BUDGET_CAP_NUM 4
-#endif
-#ifndef WC_BUDGET_CAP_DEN
 #define WC_BUDGET_CAP_DEN 2
-#endif
-
-/* 1: work-conserving rollover, 0: plain per-period quota reset. */
-#ifndef SCH_ROLLOVER_WORK_CONSERVING
-#define SCH_ROLLOVER_WORK_CONSERVING 1
-#endif
 
 static uint32_t cycle_weights[MAX_TENANT_NUM] = {60, 40};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {80, 10}; 
