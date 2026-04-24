@@ -1,7 +1,5 @@
 #include "flexio_pp_dev_utils.h"
 
-
-
 static inline void
 sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
 		   struct dpa_sche_context *this_sch_ctx)
@@ -21,6 +19,29 @@ sch_assign_workers(struct host2dev_packet_processor_data_sch *data_from_host,
 				 __ATOMIC_RELAXED);
 		__atomic_store_n(&thd_info->sch_ctx, this_sch_ctx, __ATOMIC_RELAXED);
 		thd_info->wakeup_cq_num = dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number;
+	}
+}
+
+static inline void
+sch_check_workers(struct flexio_dev_thread_ctx *dtctx,
+		  int sch_id,
+		  uint32_t threads_num_per_scheduler)
+{
+	for (uint32_t worker_idx = 0; worker_idx < threads_num_per_scheduler; worker_idx++) {
+		uint32_t thd_id = sch_id * threads_num_per_scheduler + worker_idx;
+		struct offload_dispatch_info *thd_info = &offload_info[thd_id];
+		eu_status current_status = __atomic_load_n(&thd_info->status, __ATOMIC_ACQUIRE);
+
+		if (!thd_info->wakeup_cq_num) {
+			thd_info->wakeup_cq_num = dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number;
+		}
+
+		if (current_status == EU_OFF && thd_info->wakeup_cq_num) {
+			flexio_dev_msix_send(dtctx, thd_info->wakeup_cq_num);
+			__atomic_store_n(&thd_info->status, EU_HANG, __ATOMIC_RELEASE);
+		} else if (current_status == EU_FREE) {
+			__atomic_store_n(&thd_info->status, EU_HANG, __ATOMIC_RELEASE);
+		}
 	}
 }
 
@@ -162,6 +183,7 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 }
 #endif
 
+// report functions 
 #if SCH_CYCLE_USAGE_REPORT
 static inline void
 sch_report_cycle_usage(struct dpa_sche_context *sch_ctx,
@@ -207,29 +229,6 @@ sch_report_rollover_cost(struct dpa_sche_context *sch_ctx, int sch_id)
 	sch_ctx->rollover_cost_report_total_cycles = 0;
 }
 #endif
-
-static inline void
-sch_check_workers(struct flexio_dev_thread_ctx *dtctx,
-		  int sch_id,
-		  uint32_t threads_num_per_scheduler)
-{
-	for (uint32_t worker_idx = 0; worker_idx < threads_num_per_scheduler; worker_idx++) {
-		uint32_t thd_id = sch_id * threads_num_per_scheduler + worker_idx;
-		struct offload_dispatch_info *thd_info = &offload_info[thd_id];
-		eu_status current_status = __atomic_load_n(&thd_info->status, __ATOMIC_ACQUIRE);
-
-		if (!thd_info->wakeup_cq_num) {
-			thd_info->wakeup_cq_num = dpa_thds_ctx[thd_id].queue.rq_cq_ctx.cq_number;
-		}
-
-		if (current_status == EU_OFF && thd_info->wakeup_cq_num) {
-			flexio_dev_msix_send(dtctx, thd_info->wakeup_cq_num);
-			__atomic_store_n(&thd_info->status, EU_HANG, __ATOMIC_RELEASE);
-		} else if (current_status == EU_FREE) {
-			__atomic_store_n(&thd_info->status, EU_HANG, __ATOMIC_RELEASE);
-		}
-	}
-}
 
 flexio_dev_event_handler_t flexio_scheduler_handle;
 __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
