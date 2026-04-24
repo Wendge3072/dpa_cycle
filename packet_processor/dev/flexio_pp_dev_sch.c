@@ -47,7 +47,7 @@ sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 			size_t tenant_quota = base_cycle_budget * cycle_weights[t] / sum_weight;
 			sch_ctx->tenant_cycle_target[t] = tenant_quota;
 			sch_ctx->tenant_cycle_budget[t] = tenant_quota;
-			// sch_ctx->tenant_cycle_budget_cap[t] = sch_budget_cap(tenant_quota);
+			sch_ctx->tenant_cycle_budget_cap[t] = sch_budget_cap(tenant_quota);
 			flexio_dev_print("sch %d tenant %u cycle budget: quota=%zu budget=%zu cap=%zu period=%zu weight=%u\n",
 					 sch_id, t, tenant_quota,
 					 sch_ctx->tenant_cycle_budget[t],
@@ -94,7 +94,7 @@ sch_init_bandwidth_accounting(struct dpa_sche_context *sch_ctx,
 
 			sch_ctx->tenant_bw_target[t] = tenant_budget;
 			sch_ctx->tenant_bw_budget[t] = tenant_budget;
-			// sch_ctx->tenant_bw_budget_cap[t] = sch_budget_cap(tenant_budget);
+			sch_ctx->tenant_bw_budget_cap[t] = sch_budget_cap(tenant_budget);
 			__atomic_store_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
 			flexio_dev_print("sch %d tenant %u bandwidth budget: quota=%zuB budget=%zuB cap=%zuB period=1ms weight=%u\n",
 					 sch_id, t, tenant_budget,
@@ -331,7 +331,6 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 	}
 }
 #else
-
 static inline void
 sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 			  uint32_t tenants_num)
