@@ -98,12 +98,12 @@ struct dpa_sche_context {
 	size_t tenant_cycle_consumed[MAX_TENANT_NUM];
 	size_t tenant_bw_target[MAX_TENANT_NUM];
 	size_t tenant_bw_consumed[MAX_TENANT_NUM];
-#if SCH_ROLLOVER_WORK_CONSERVING
+// #if SCH_ROLLOVER_WORK_CONSERVING
 	size_t tenant_cycle_budget[MAX_TENANT_NUM];
 	size_t tenant_cycle_budget_cap[MAX_TENANT_NUM];
 	size_t tenant_bw_budget[MAX_TENANT_NUM];
 	size_t tenant_bw_budget_cap[MAX_TENANT_NUM];
-#endif
+// #endif
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
 	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
