@@ -402,8 +402,8 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 #endif
 		__atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0, __ATOMIC_RELAXED);
 		__atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
-		sch_ctx->tenant_cycle_budget[t] = sch_ctx->tenant_cycle_target[t];
-		sch_ctx->tenant_bw_budget[t] = sch_ctx->tenant_bw_target[t];
+		// sch_ctx->tenant_cycle_budget[t] = sch_ctx->tenant_cycle_target[t];
+		// sch_ctx->tenant_bw_budget[t] = sch_ctx->tenant_bw_target[t];
 		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
 #if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] += period_used;
