@@ -273,8 +273,13 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 
 		current_cycle_used = __atomic_load_n(&sch_ctx->tenant_cycle_consumed[t], __ATOMIC_RELAXED);
 		current_bw_used = __atomic_load_n(&sch_ctx->tenant_bw_consumed[t], __ATOMIC_RELAXED);
+#if SCH_ROLLOVER_WORK_CONSERVING
 		if (current_cycle_used >= sch_ctx->tenant_cycle_budget[t] ||
 		    current_bw_used >= sch_ctx->tenant_bw_budget[t]) {
+#else
+		if (current_cycle_used >= sch_ctx->tenant_cycle_target[t] ||
+		    current_bw_used >= sch_ctx->tenant_bw_target[t]) {
+#endif
 			__atomic_store_n(&sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELAXED);
 		}
 	}
