@@ -67,100 +67,102 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 
 #if SCH_ROLLOVER_WORK_CONSERVING
 
-static inline void
-sch_rollover_resource_budget(size_t resource_target[MAX_TENANT_NUM],
-			     size_t resource_budget[MAX_TENANT_NUM],
-			     size_t resource_budget_cap[MAX_TENANT_NUM],
-			     size_t resource_consumed[MAX_TENANT_NUM],
-			     size_t resource_report_used[MAX_TENANT_NUM],
-			     uint32_t tenants_num)
+static inline __attribute__((always_inline)) size_t
+sch_budget_settle(size_t quota, size_t cap, size_t used, size_t *budget)
 {
-	size_t shared_pool = 0;
+	size_t carried = *budget > used ? *budget - used : 0;
+	size_t headroom = cap > quota ? cap - quota : 0;
 
-	/* First pass: settle each tenant's last-period usage.
-	 * resource_target: the guaranteed quota added every period.
-	 * resource_budget: the currently usable budget for the new period.
-	 * resource_budget_cap: the maximum budget one tenant may hold.
-	 * shared_pool: extra idle budget above a tenant's cap, available to lend.
-	 */
-	for (uint32_t t = 0; t < tenants_num; t++) {
-		/* Atomically take the previous period's usage and reset it for workers. */
-		size_t period_used = __atomic_exchange_n(&resource_consumed[t], 0, __ATOMIC_RELAXED);
-		/* quota is this tenant's guaranteed per-period share. */
-		size_t quota = resource_target[t];
-		/* cap bounds how much carried/borrowed budget this tenant can use. */
-		size_t cap = resource_budget_cap[t];
-		/* carried is the unused part of the old budget. Overspending carries 0. */
-		size_t carried = resource_budget[t] > period_used ?
-				 resource_budget[t] - period_used : 0;
-		/* tenant_headroom is the part above quota that may be kept privately. */
-		size_t tenant_headroom = cap > quota ? cap - quota : 0;
-
-		if (carried > tenant_headroom) {
-			/* Keep only up to cap; lend the extra idle budget to the pool. */
-			shared_pool += carried - tenant_headroom;
-			resource_budget[t] = cap;
-		} else {
-			/* Start the new period with quota plus the kept unused budget. */
-			resource_budget[t] = quota + carried;
-		}
-
-		if (resource_report_used) {
-			/* Optional accounting path used by the cycle usage report. */
-			resource_report_used[t] += period_used;
-		}
+	if (carried > headroom) {
+		*budget = cap;
+		return carried - headroom;
 	}
 
-	/* Second pass: lend pooled idle budget to tenants below their cap. */
-	for (uint32_t t = 0; t < tenants_num && shared_pool; t++) {
-		size_t cap = resource_budget_cap[t];
-		size_t borrow = 0;
-
-		if (resource_budget[t] >= cap) {
-			continue;
-		}
-
-		/* Borrow only enough to reach cap, and never more than the pool has. */
-		borrow = cap - resource_budget[t];
-		if (borrow > shared_pool) {
-			borrow = shared_pool;
-		}
-		resource_budget[t] += borrow;
-		shared_pool -= borrow;
-	}
+	*budget = quota + carried;
+	return 0;
 }
-#endif
 
-#if SCH_ROLLOVER_WORK_CONSERVING
+static inline __attribute__((always_inline)) void
+sch_budget_receive(size_t *budget, size_t cap, size_t shared_budget)
+{
+	size_t borrow = 0;
+
+	if (!shared_budget || *budget >= cap) {
+		return;
+	}
+
+	borrow = cap - *budget;
+	if (borrow > shared_budget) {
+		borrow = shared_budget;
+	}
+	*budget += borrow;
+}
+
 static inline void
 sch_rollover_budget(struct dpa_sche_context *sch_ctx,
-				    uint32_t tenants_num)
+		    uint32_t tenants_num)
 {
-#if SCH_CYCLE_USAGE_REPORT
-	sch_rollover_resource_budget(sch_ctx->tenant_cycle_target,
-				     sch_ctx->tenant_cycle_budget,
-				     sch_ctx->tenant_cycle_budget_cap,
-				     sch_ctx->tenant_cycle_consumed,
-				     sch_ctx->tenant_cycle_report_used,
-				     tenants_num);
-#else
-	sch_rollover_resource_budget(sch_ctx->tenant_cycle_target,
-				     sch_ctx->tenant_cycle_budget,
-				     sch_ctx->tenant_cycle_budget_cap,
-				     sch_ctx->tenant_cycle_consumed,
-				     NULL,
-				     tenants_num);
-#endif
-	sch_rollover_resource_budget(sch_ctx->tenant_bw_target,
-				     sch_ctx->tenant_bw_budget,
-				     sch_ctx->tenant_bw_budget_cap,
-				     sch_ctx->tenant_bw_consumed,
-				     NULL,
-				     tenants_num);
+	size_t cycle_extra0 = 0;
+	size_t cycle_extra1 = 0;
+	size_t bw_extra0 = 0;
+	size_t bw_extra1 = 0;
+	size_t cycle_used = 0;
+	size_t bw_used = 0;
 
-	for (uint32_t t = 0; t < tenants_num; t++) {
-		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
+	if (tenants_num == 0) {
+		return;
 	}
+
+	cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[0], 0,
+					 __ATOMIC_RELAXED);
+	bw_used = __atomic_exchange_n(&sch_ctx->tenant_bw_consumed[0], 0,
+				      __ATOMIC_RELAXED);
+	cycle_extra0 = sch_budget_settle(sch_ctx->tenant_cycle_target[0],
+					 sch_ctx->tenant_cycle_budget_cap[0],
+					 cycle_used,
+					 &sch_ctx->tenant_cycle_budget[0]);
+	bw_extra0 = sch_budget_settle(sch_ctx->tenant_bw_target[0],
+				      sch_ctx->tenant_bw_budget_cap[0],
+				      bw_used,
+				      &sch_ctx->tenant_bw_budget[0]);
+#if SCH_CYCLE_USAGE_REPORT
+	sch_ctx->tenant_cycle_report_used[0] += cycle_used;
+#endif
+
+	if (tenants_num > 1) {
+		cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[1], 0,
+						 __ATOMIC_RELAXED);
+		bw_used = __atomic_exchange_n(&sch_ctx->tenant_bw_consumed[1], 0,
+					      __ATOMIC_RELAXED);
+		cycle_extra1 = sch_budget_settle(sch_ctx->tenant_cycle_target[1],
+						 sch_ctx->tenant_cycle_budget_cap[1],
+						 cycle_used,
+						 &sch_ctx->tenant_cycle_budget[1]);
+		bw_extra1 = sch_budget_settle(sch_ctx->tenant_bw_target[1],
+					      sch_ctx->tenant_bw_budget_cap[1],
+					      bw_used,
+					      &sch_ctx->tenant_bw_budget[1]);
+#if SCH_CYCLE_USAGE_REPORT
+		sch_ctx->tenant_cycle_report_used[1] += cycle_used;
+#endif
+
+		sch_budget_receive(&sch_ctx->tenant_cycle_budget[0],
+				   sch_ctx->tenant_cycle_budget_cap[0],
+				   cycle_extra1);
+		sch_budget_receive(&sch_ctx->tenant_cycle_budget[1],
+				   sch_ctx->tenant_cycle_budget_cap[1],
+				   cycle_extra0);
+		sch_budget_receive(&sch_ctx->tenant_bw_budget[0],
+				   sch_ctx->tenant_bw_budget_cap[0],
+				   bw_extra1);
+		sch_budget_receive(&sch_ctx->tenant_bw_budget[1],
+				   sch_ctx->tenant_bw_budget_cap[1],
+				   bw_extra0);
+
+		__atomic_store_n(&sch_ctx->restrict_tenant[1], 0, __ATOMIC_RELAXED);
+	}
+
+	__atomic_store_n(&sch_ctx->restrict_tenant[0], 0, __ATOMIC_RELAXED);
 }
 #else
 static inline void
