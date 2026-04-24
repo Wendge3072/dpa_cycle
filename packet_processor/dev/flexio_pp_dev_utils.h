@@ -29,6 +29,11 @@
 #define SCH_CYCLE_USAGE_REPORT 1
 #endif
 
+/* Report sch_rollover_budget average cost per second in DPA cycles. */
+#ifndef SCH_ROLLOVER_COST_REPORT
+#define SCH_ROLLOVER_COST_REPORT 1
+#endif
+
 /* Report scheduler main-loop iterations per scheduling period once per second. */
 #ifndef SCH_LOOP_ITER_REPORT
 #define SCH_LOOP_ITER_REPORT 1
@@ -55,6 +60,11 @@
 #endif
 #ifndef WC_BUDGET_CAP_DEN
 #define WC_BUDGET_CAP_DEN 2
+#endif
+
+/* 1: work-conserving rollover, 0: plain per-period quota reset. */
+#ifndef SCH_ROLLOVER_WORK_CONSERVING
+#define SCH_ROLLOVER_WORK_CONSERVING 1
 #endif
 
 static uint32_t cycle_weights[MAX_TENANT_NUM] = {60, 40};
@@ -114,6 +124,10 @@ struct dpa_sche_context {
 	size_t sched_loop_current;
 	size_t sched_loop_report_periods;
 	size_t sched_loop_report_total;
+#endif
+#if SCH_ROLLOVER_COST_REPORT
+	size_t rollover_cost_report_periods;
+	size_t rollover_cost_report_total_cycles;
 #endif
 };
 

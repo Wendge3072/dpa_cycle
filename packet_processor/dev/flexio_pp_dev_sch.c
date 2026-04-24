@@ -150,6 +150,10 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	dpa_schs_ctx[i].sched_loop_report_periods = 0;
 	dpa_schs_ctx[i].sched_loop_report_total = 0;
 #endif
+#if SCH_ROLLOVER_COST_REPORT
+	dpa_schs_ctx[i].rollover_cost_report_periods = 0;
+	dpa_schs_ctx[i].rollover_cost_report_total_cycles = 0;
+#endif
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 		dpa_schs_ctx[i].queues[j].sq_lkey = data_from_host->queues[j].sq_transf.wqd_mkey_id;
 		dpa_schs_ctx[i].queues[j].rq_lkey = data_from_host->queues[j].rq_transf.wqd_mkey_id;
@@ -319,9 +323,10 @@ sch_rollover_resource_budget(size_t resource_target[MAX_TENANT_NUM],
 	}
 }
 
+#if SCH_ROLLOVER_WORK_CONSERVING
 static inline void
 sch_rollover_budget(struct dpa_sche_context *sch_ctx,
-		    uint32_t tenants_num)
+				    uint32_t tenants_num)
 {
 #if SCH_CYCLE_USAGE_REPORT
 	sch_rollover_resource_budget(sch_ctx->tenant_cycle_target,
@@ -349,6 +354,27 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
 	}
 }
+#else
+
+static inline void
+sch_rollover_budget(struct dpa_sche_context *sch_ctx,
+			  uint32_t tenants_num)
+{
+	for (uint32_t t = 0; t < tenants_num; t++) {
+#if SCH_CYCLE_USAGE_REPORT
+		size_t period_used =
+#endif
+		__atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0, __ATOMIC_RELAXED);
+		__atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
+		sch_ctx->tenant_cycle_budget[t] = sch_ctx->tenant_cycle_target[t];
+		sch_ctx->tenant_bw_budget[t] = sch_ctx->tenant_bw_target[t];
+		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
+#if SCH_CYCLE_USAGE_REPORT
+		sch_ctx->tenant_cycle_report_used[t] += period_used;
+#endif
+	}
+}
+#endif
 
 #if SCH_CYCLE_USAGE_REPORT
 static inline void
@@ -361,6 +387,38 @@ sch_report_cycle_usage(struct dpa_sche_context *sch_ctx,
 				 sch_id, t, sch_ctx->tenant_cycle_report_used[t] / 1000);
 		sch_ctx->tenant_cycle_report_used[t] = 0;
 	}
+}
+#endif
+
+#if SCH_LOOP_ITER_REPORT
+static inline void
+sch_report_loop_iters(struct dpa_sche_context *sch_ctx, int sch_id)
+{
+	size_t loop_periods = sch_ctx->sched_loop_report_periods;
+	size_t loop_avg = loop_periods ?
+				sch_ctx->sched_loop_report_total / loop_periods : 0;
+
+	flexio_dev_print("sch %d loop report: periods=%zu avg=%zu\n",
+				sch_id, loop_periods, loop_avg);
+	sch_ctx->sched_loop_report_periods = 0;
+	sch_ctx->sched_loop_report_total = 0;
+}
+#endif
+
+#if SCH_ROLLOVER_COST_REPORT
+static inline void
+sch_report_rollover_cost(struct dpa_sche_context *sch_ctx, int sch_id)
+{
+	size_t rollover_periods = sch_ctx->rollover_cost_report_periods;
+	size_t rollover_avg_cycles = rollover_periods ?
+						sch_ctx->rollover_cost_report_total_cycles /
+						rollover_periods : 0;
+
+	flexio_dev_print("sch %d rollover report: wc=%u periods=%zu avg_cycles=%zu\n",
+				sch_id, (unsigned)SCH_ROLLOVER_WORK_CONSERVING,
+				rollover_periods, rollover_avg_cycles);
+	sch_ctx->rollover_cost_report_periods = 0;
+	sch_ctx->rollover_cost_report_total_cycles = 0;
 }
 #endif
 
@@ -401,7 +459,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	size_t time_interval = 15;
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
 	register size_t next_sched_cycle = __dpa_thread_cycles() + SCHED_PERIOD_CYCLES;
-#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT
+#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT || SCH_ROLLOVER_COST_REPORT
 	register size_t next_report_cycle = __dpa_thread_cycles() + DPA_FREQ_HZ;
 #endif
 	size_t now_cycle = 0;
@@ -430,22 +488,28 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			this_sch_ctx->sched_loop_current = 0;
 			this_sch_ctx->sched_loop_report_periods++;
 #endif
+#if SCH_ROLLOVER_COST_REPORT
+			size_t rollover_begin = __dpa_thread_cycles();
+#endif
 			sch_rollover_budget(this_sch_ctx, tenants_num);
+#if SCH_ROLLOVER_COST_REPORT
+			this_sch_ctx->rollover_cost_report_total_cycles +=
+				__dpa_thread_cycles() - rollover_begin;
+			this_sch_ctx->rollover_cost_report_periods++;
+#endif
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
 		}
-#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT
+
+#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT || SCH_ROLLOVER_COST_REPORT
 		if (now_cycle >= next_report_cycle) {
 #if SCH_CYCLE_USAGE_REPORT
 			sch_report_cycle_usage(this_sch_ctx, i, tenants_num);
 #endif
 #if SCH_LOOP_ITER_REPORT
-			size_t periods = this_sch_ctx->sched_loop_report_periods;
-			size_t avg = periods ? this_sch_ctx->sched_loop_report_total / periods : 0;
-
-			flexio_dev_print("sch %d loop report: periods=%zu avg=%zu\n",
-					 i, periods, avg);
-			this_sch_ctx->sched_loop_report_periods = 0;
-			this_sch_ctx->sched_loop_report_total = 0;
+			sch_report_loop_iters(this_sch_ctx, i);
+#endif
+#if SCH_ROLLOVER_COST_REPORT
+			sch_report_rollover_cost(this_sch_ctx, i);
 #endif
 			next_report_cycle = now_cycle + DPA_FREQ_HZ;
 		}
