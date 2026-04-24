@@ -98,12 +98,10 @@ struct dpa_sche_context {
 	size_t tenant_cycle_consumed[MAX_TENANT_NUM];
 	size_t tenant_bw_target[MAX_TENANT_NUM];
 	size_t tenant_bw_consumed[MAX_TENANT_NUM];
-// #if SCH_ROLLOVER_WORK_CONSERVING
 	size_t tenant_cycle_budget[MAX_TENANT_NUM];
 	size_t tenant_cycle_budget_cap[MAX_TENANT_NUM];
 	size_t tenant_bw_budget[MAX_TENANT_NUM];
 	size_t tenant_bw_budget_cap[MAX_TENANT_NUM];
-// #endif
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
 	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
@@ -139,6 +137,8 @@ extern struct dpa_sche_context dpa_schs_ctx[32];
 extern struct offload_dispatch_info offload_info[190];
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
+void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
+             struct host2dev_packet_processor_data_sch *data_from_host);
 
 static inline __attribute__((always_inline)) uint32_t
 pp_get_packet_size(struct flexio_dpa_dev_queue *rq_queue)
