@@ -102,67 +102,43 @@ static inline void
 sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		    uint32_t tenants_num)
 {
-	size_t cycle_extra0 = 0;
-	size_t cycle_extra1 = 0;
-	size_t bw_extra0 = 0;
-	size_t bw_extra1 = 0;
+	size_t cycle_extra[2] = {0};
+	size_t bw_extra[2] = {0};
 	size_t cycle_used = 0;
 	size_t bw_used = 0;
 
 	if (tenants_num == 0) {
 		return;
 	}
-
-	cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[0], 0,
-					 __ATOMIC_RELAXED);
-	bw_used = __atomic_exchange_n(&sch_ctx->tenant_bw_consumed[0], 0,
-				      __ATOMIC_RELAXED);
-	cycle_extra0 = sch_budget_settle(sch_ctx->tenant_cycle_target[0],
-					 sch_ctx->tenant_cycle_budget_cap[0],
-					 cycle_used,
-					 &sch_ctx->tenant_cycle_budget[0]);
-	bw_extra0 = sch_budget_settle(sch_ctx->tenant_bw_target[0],
-				      sch_ctx->tenant_bw_budget_cap[0],
-				      bw_used,
-				      &sch_ctx->tenant_bw_budget[0]);
-#if SCH_CYCLE_USAGE_REPORT
-	sch_ctx->tenant_cycle_report_used[0] += cycle_used;
-#endif
-
-	if (tenants_num > 1) {
-		cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[1], 0,
-						 __ATOMIC_RELAXED);
-		bw_used = __atomic_exchange_n(&sch_ctx->tenant_bw_consumed[1], 0,
-					      __ATOMIC_RELAXED);
-		cycle_extra1 = sch_budget_settle(sch_ctx->tenant_cycle_target[1],
-						 sch_ctx->tenant_cycle_budget_cap[1],
-						 cycle_used,
-						 &sch_ctx->tenant_cycle_budget[1]);
-		bw_extra1 = sch_budget_settle(sch_ctx->tenant_bw_target[1],
-					      sch_ctx->tenant_bw_budget_cap[1],
-					      bw_used,
-					      &sch_ctx->tenant_bw_budget[1]);
-#if SCH_CYCLE_USAGE_REPORT
-		sch_ctx->tenant_cycle_report_used[1] += cycle_used;
-#endif
-
-		sch_budget_receive(&sch_ctx->tenant_cycle_budget[0],
-				   sch_ctx->tenant_cycle_budget_cap[0],
-				   cycle_extra1);
-		sch_budget_receive(&sch_ctx->tenant_cycle_budget[1],
-				   sch_ctx->tenant_cycle_budget_cap[1],
-				   cycle_extra0);
-		sch_budget_receive(&sch_ctx->tenant_bw_budget[0],
-				   sch_ctx->tenant_bw_budget_cap[0],
-				   bw_extra1);
-		sch_budget_receive(&sch_ctx->tenant_bw_budget[1],
-				   sch_ctx->tenant_bw_budget_cap[1],
-				   bw_extra0);
-
-		__atomic_store_n(&sch_ctx->restrict_tenant[1], 0, __ATOMIC_RELAXED);
+	for(int t = 0; t < tenants_num; t++){
+		cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0,
+						__ATOMIC_RELAXED);
+		bw_used = __atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0,
+						__ATOMIC_RELAXED);
+		cycle_extra[t] = sch_budget_settle(sch_ctx->tenant_cycle_target[t],
+						sch_ctx->tenant_cycle_budget_cap[t],
+						cycle_used,
+						&sch_ctx->tenant_cycle_budget[t]);
+		bw_extra[t] = sch_budget_settle(sch_ctx->tenant_bw_target[t],
+						sch_ctx->tenant_bw_budget_cap[t],
+						bw_used,
+						&sch_ctx->tenant_bw_budget[t]);
+	#if SCH_CYCLE_USAGE_REPORT
+		sch_ctx->tenant_cycle_report_used[t] += cycle_used;
+	#endif
 	}
 
-	__atomic_store_n(&sch_ctx->restrict_tenant[0], 0, __ATOMIC_RELAXED);
+	for(int t = 0; t < tenants_num; t++){
+		sch_budget_receive(&sch_ctx->tenant_cycle_budget[t],
+				   sch_ctx->tenant_cycle_budget_cap[t],
+				   cycle_extra[t]);
+		sch_budget_receive(&sch_ctx->tenant_bw_budget[t],
+				   sch_ctx->tenant_bw_budget_cap[t],
+				   bw_extra[t]);
+
+		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
+	}
+
 }
 #else
 static inline void
