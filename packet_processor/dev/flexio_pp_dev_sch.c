@@ -1,5 +1,13 @@
 #include "flexio_pp_dev_utils.h"
 
+static inline size_t
+sch_budget_cap(size_t target)
+{
+	size_t cap = target * WC_BUDGET_CAP_NUM / WC_BUDGET_CAP_DEN;
+
+	return cap > target ? cap : target;
+}
+
 static void
 sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 			  struct host2dev_packet_processor_data_sch *data_from_host)
@@ -226,14 +234,6 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 }
 
 #if SCH_ROLLOVER_WORK_CONSERVING
-
-static inline size_t
-sch_budget_cap(size_t target)
-{
-	size_t cap = target * WC_BUDGET_CAP_NUM / WC_BUDGET_CAP_DEN;
-
-	return cap > target ? cap : target;
-}
 
 static inline void
 sch_rollover_resource_budget(size_t resource_target[MAX_TENANT_NUM],
