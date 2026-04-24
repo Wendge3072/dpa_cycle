@@ -82,13 +82,13 @@ sch_budget_settle(size_t quota, size_t cap, size_t used, size_t *budget)
 	return 0;
 }
 
-static inline __attribute__((always_inline)) void
+static inline __attribute__((always_inline)) size_t
 sch_budget_receive(size_t *budget, size_t cap, size_t shared_budget)
 {
 	size_t borrow = 0;
 
 	if (!shared_budget || *budget >= cap) {
-		return;
+		return shared_budget;
 	}
 
 	borrow = cap - *budget;
@@ -96,30 +96,31 @@ sch_budget_receive(size_t *budget, size_t cap, size_t shared_budget)
 		borrow = shared_budget;
 	}
 	*budget += borrow;
+	return shared_budget - borrow;
 }
 
 static inline void
 sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		    uint32_t tenants_num)
 {
-	size_t cycle_extra[2] = {0};
-	size_t bw_extra[2] = {0};
+	size_t cycle_pool = 0;
+	size_t bw_pool = 0;
 	size_t cycle_used = 0;
 	size_t bw_used = 0;
 
 	if (tenants_num == 0) {
 		return;
 	}
-	for(int t = 0; t < tenants_num; t++){
+	for (uint32_t t = 0; t < tenants_num; t++) {
 		cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0,
 						__ATOMIC_RELAXED);
 		bw_used = __atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0,
 						__ATOMIC_RELAXED);
-		cycle_extra[t] = sch_budget_settle(sch_ctx->tenant_cycle_target[t],
+		cycle_pool += sch_budget_settle(sch_ctx->tenant_cycle_target[t],
 						sch_ctx->tenant_cycle_budget_cap[t],
 						cycle_used,
 						&sch_ctx->tenant_cycle_budget[t]);
-		bw_extra[t] = sch_budget_settle(sch_ctx->tenant_bw_target[t],
+		bw_pool += sch_budget_settle(sch_ctx->tenant_bw_target[t],
 						sch_ctx->tenant_bw_budget_cap[t],
 						bw_used,
 						&sch_ctx->tenant_bw_budget[t]);
@@ -128,15 +129,13 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 	#endif
 	}
 
-	for(int t = 0; t < tenants_num; t++){
-		sch_budget_receive(&sch_ctx->tenant_cycle_budget[t],
-				   sch_ctx->tenant_cycle_budget_cap[t],
-				   cycle_extra[t]);
-	}
-	for(int t = 0; t < tenants_num; t++){
-		sch_budget_receive(&sch_ctx->tenant_bw_budget[t],
-				   sch_ctx->tenant_bw_budget_cap[t],
-				   bw_extra[t]);
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		cycle_pool = sch_budget_receive(&sch_ctx->tenant_cycle_budget[t],
+						sch_ctx->tenant_cycle_budget_cap[t],
+						cycle_pool);
+		bw_pool = sch_budget_receive(&sch_ctx->tenant_bw_budget[t],
+					     sch_ctx->tenant_bw_budget_cap[t],
+					     bw_pool);
 
 		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
 	}
