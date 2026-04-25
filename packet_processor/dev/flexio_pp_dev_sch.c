@@ -185,7 +185,7 @@ sch_report_loop_iters(struct dpa_sche_context *sch_ctx, int sch_id)
 	size_t loop_avg = loop_periods ?
 				sch_ctx->sched_loop_report_total / loop_periods : 0;
 
-	flexio_dev_print("sch %d loop report: periods=%zu avg=%zu\n",
+	flexio_dev_print("sch %d loop report: periods=%4zu avg=%zu\n",
 				sch_id, loop_periods, loop_avg);
 	sch_ctx->sched_loop_report_periods = 0;
 	sch_ctx->sched_loop_report_total = 0;
@@ -201,7 +201,7 @@ sch_report_rollover_cost(struct dpa_sche_context *sch_ctx, int sch_id)
 						sch_ctx->rollover_cost_report_total_cycles /
 						rollover_periods : 0;
 
-	flexio_dev_print("sch %d rollover report: wc=%u periods=%zu avg_cycles=%zu\n",
+	flexio_dev_print("sch %d rollover report: wc=%u periods=%4zu avg_cycles=%zu\n",
 				sch_id, (unsigned)SCH_ROLLOVER_WORK_CONSERVING,
 				rollover_periods, rollover_avg_cycles);
 	sch_ctx->rollover_cost_report_periods = 0;
