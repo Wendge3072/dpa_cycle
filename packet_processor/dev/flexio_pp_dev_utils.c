@@ -103,47 +103,35 @@ sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 	int sch_id = data_from_host->sch_id;
 	size_t tenants_num = data_from_host->tenants_num;
 	size_t threads_num_per_scheduler = data_from_host->threads_num_per_scheduler;
-	// size_t base_cycle_budget = SCHED_PERIOD_CYCLES * threads_num_per_scheduler * MAX_CYCLE_PERCENTAGE / MAX_CYCLE_TOTAL;
-	size_t base_cycle_budget = SCHED_PERIOD_CYCLES * threads_num_per_scheduler * 7815 / 10000;
+	size_t base_cycle_budget = 
+		SCHED_PERIOD_CYCLES * threads_num_per_scheduler * MAX_CYCLE_PERCENTAGE / MAX_CYCLE_TOTAL;
 	uint32_t sum_weight = 0;
 
 	if (tenants_num > MAX_TENANT_NUM) {
 		tenants_num = MAX_TENANT_NUM;
 	}
 
-	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
-		sch_ctx->tenant_cycle_target[t] = 0;
-		sch_ctx->tenant_cycle_budget[t] = 0;
-		sch_ctx->tenant_cycle_budget_cap[t] = 0;
-		__atomic_store_n(&sch_ctx->tenant_cycle_consumed[t], 0, __ATOMIC_RELAXED);
-		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
-#if SCH_CYCLE_USAGE_REPORT
-		sch_ctx->tenant_cycle_report_used[t] = 0;
-#endif
-	}
-
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		sum_weight += cycle_weights[t];
 	}
 
-	if (tenants_num == 0) {
-		return;
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		size_t tenant_quota = base_cycle_budget * cycle_weights[t] / sum_weight;
+		sch_ctx->tenant_cycle_target[t] = tenant_quota;
+		sch_ctx->tenant_cycle_budget[t] = tenant_quota;
+		sch_ctx->tenant_cycle_budget_cap[t] = sch_budget_cap(tenant_quota);
+		sch_ctx->tenant_cycle_consumed[t] = 0;
+		sch_ctx->restrict_tenant[t] = 0;
+#if SCH_CYCLE_USAGE_REPORT
+		sch_ctx->tenant_cycle_report_used[t] = 0;
+#endif
+		flexio_dev_print("sch %d tenant %u cycle budget: quota=%zu budget=%zu cap=%zu period=%zu weight=%u\n",
+					sch_id, t, tenant_quota,
+					sch_ctx->tenant_cycle_budget[t],
+					sch_ctx->tenant_cycle_budget_cap[t],
+					(size_t)SCHED_PERIOD_CYCLES, cycle_weights[t]);
 	}
-
-	if (sum_weight > 0) {
-		for (uint32_t t = 0; t < tenants_num; t++) {
-			size_t tenant_quota = base_cycle_budget * cycle_weights[t] / sum_weight;
-			sch_ctx->tenant_cycle_target[t] = tenant_quota;
-			sch_ctx->tenant_cycle_budget[t] = tenant_quota;
-			sch_ctx->tenant_cycle_budget_cap[t] = sch_budget_cap(tenant_quota);
-			flexio_dev_print("sch %d tenant %u cycle budget: quota=%zu budget=%zu cap=%zu period=%zu weight=%u\n",
-					 sch_id, t, tenant_quota,
-					 sch_ctx->tenant_cycle_budget[t],
-					 sch_ctx->tenant_cycle_budget_cap[t],
-					 (size_t)SCHED_PERIOD_CYCLES, cycle_weights[t]);
-		}
-		return;
-	}
+	return;
 }
 
 static void
@@ -161,37 +149,23 @@ sch_init_bandwidth_accounting(struct dpa_sche_context *sch_ctx,
 		tenants_num = MAX_TENANT_NUM;
 	}
 
-	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
-		sch_ctx->tenant_bw_target[t] = 0;
-		sch_ctx->tenant_bw_budget[t] = 0;
-		sch_ctx->tenant_bw_budget_cap[t] = 0;
-		__atomic_store_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
-	}
-
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		sum_weight += bandwidth_weights[t];
 	}
 
-	if (tenants_num == 0) {
-		return;
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		size_t tenant_budget = per_period_total_budget * bandwidth_weights[t] / sum_weight;
+		sch_ctx->tenant_bw_target[t] = tenant_budget;
+		sch_ctx->tenant_bw_budget[t] = tenant_budget;
+		sch_ctx->tenant_bw_budget_cap[t] = sch_budget_cap(tenant_budget);
+		__atomic_store_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
+		flexio_dev_print("sch %d tenant %u bandwidth budget: quota=%zuB budget=%zuB cap=%zuB period=1ms weight=%u\n",
+					sch_id, t, tenant_budget,
+					sch_ctx->tenant_bw_budget[t],
+					sch_ctx->tenant_bw_budget_cap[t],
+					bandwidth_weights[t]);
 	}
-
-	if (sum_weight > 0) {
-		for (uint32_t t = 0; t < tenants_num; t++) {
-			size_t tenant_budget = per_period_total_budget * bandwidth_weights[t] / sum_weight;
-
-			sch_ctx->tenant_bw_target[t] = tenant_budget;
-			sch_ctx->tenant_bw_budget[t] = tenant_budget;
-			sch_ctx->tenant_bw_budget_cap[t] = sch_budget_cap(tenant_budget);
-			__atomic_store_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
-			flexio_dev_print("sch %d tenant %u bandwidth budget: quota=%zuB budget=%zuB cap=%zuB period=1ms weight=%u\n",
-					 sch_id, t, tenant_budget,
-					 sch_ctx->tenant_bw_budget[t],
-					 sch_ctx->tenant_bw_budget_cap[t],
-					 bandwidth_weights[t]);
-		}
-		return;
-	}
+	return;
 }
 
 /* Initialize the app_ctx structure from the host data.
