@@ -65,8 +65,6 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 	}
 }
 
-#if SCH_ROLLOVER_WORK_CONSERVING
-
 static inline __attribute__((always_inline)) size_t
 sch_budget_settle(size_t quota, size_t cap, size_t used, size_t *budget)
 {
@@ -100,8 +98,8 @@ sch_budget_receive(size_t *budget, size_t cap, size_t shared_budget)
 }
 
 static inline void
-sch_rollover_budget(struct dpa_sche_context *sch_ctx,
-		    uint32_t tenants_num)
+sch_rollover_budget_work_conserving(struct dpa_sche_context *sch_ctx,
+				    uint32_t tenants_num)
 {
 	size_t cycle_pool = 0;
 	size_t bw_pool = 0;
@@ -141,10 +139,10 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 	}
 
 }
-#else
+
 static inline void
-sch_rollover_budget(struct dpa_sche_context *sch_ctx,
-			  uint32_t tenants_num)
+sch_rollover_budget_non_work_conserving(struct dpa_sche_context *sch_ctx,
+					uint32_t tenants_num)
 {
 	for (uint32_t t = 0; t < tenants_num; t++) {
 #if SCH_CYCLE_USAGE_REPORT
@@ -160,7 +158,32 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 #endif
 	}
 }
-#endif
+
+static inline void
+sch_update_rollover_mode(struct dpa_sche_context *sch_ctx,
+			 int sch_id,
+			 size_t now_cycle)
+{
+	if (!sch_ctx->rollover_work_conserving &&
+	    now_cycle >= sch_ctx->rollover_work_conserving_switch_cycle) {
+		sch_ctx->rollover_work_conserving = 1;
+		flexio_dev_print("sch %d rollover mode switch: wc=1 elapsed_sec=%u\n",
+				 sch_id,
+				 (unsigned)SCH_ROLLOVER_WORK_CONSERVING_SWITCH_SEC);
+	}
+}
+
+static inline void
+sch_rollover_budget(struct dpa_sche_context *sch_ctx,
+		    uint32_t tenants_num)
+{
+	if (sch_ctx->rollover_work_conserving) {
+		sch_rollover_budget_work_conserving(sch_ctx, tenants_num);
+		return;
+	}
+
+	sch_rollover_budget_non_work_conserving(sch_ctx, tenants_num);
+}
 
 // report functions 
 #if SCH_CYCLE_USAGE_REPORT
@@ -202,7 +225,7 @@ sch_report_rollover_cost(struct dpa_sche_context *sch_ctx, int sch_id)
 						rollover_periods : 0;
 
 	flexio_dev_print("sch %d rollover report: wc=%u periods=%zu avg_cycles=%zu\n",
-				sch_id, (unsigned)SCH_ROLLOVER_WORK_CONSERVING,
+				sch_id, (unsigned)sch_ctx->rollover_work_conserving,
 				rollover_periods, rollover_avg_cycles);
 	sch_ctx->rollover_cost_report_periods = 0;
 	sch_ctx->rollover_cost_report_total_cycles = 0;
@@ -255,6 +278,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 #if SCH_ROLLOVER_COST_REPORT
 			size_t rollover_begin = __dpa_thread_cycles();
 #endif
+			sch_update_rollover_mode(this_sch_ctx, i, now_cycle);
 			sch_rollover_budget(this_sch_ctx, tenants_num);
 #if SCH_ROLLOVER_COST_REPORT
 			this_sch_ctx->rollover_cost_report_total_cycles +=
