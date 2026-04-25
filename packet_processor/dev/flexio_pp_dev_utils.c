@@ -200,16 +200,9 @@ sch_init_bandwidth_accounting(struct dpa_sche_context *sch_ctx,
 void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
              struct host2dev_packet_processor_data_sch *data_from_host) {
 	int i = data_from_host->sch_id;
-	size_t start_cycle = __dpa_thread_cycles();
-
 	dpa_schs_ctx[i].packets_count = 0;
 	dpa_schs_ctx[i].idx = i;
 	dpa_schs_ctx[i].window_id = data_from_host->window_id;
-	dpa_schs_ctx[i].rollover_work_conserving = 0;
-	dpa_schs_ctx[i].rollover_work_conserving_switch_cycle =
-		start_cycle + (size_t)SCH_ROLLOVER_WORK_CONSERVING_SWITCH_SEC * DPA_FREQ_HZ;
-	flexio_dev_print("sch %d rollover mode init: wc=0 switch_after_sec=%u\n",
-			 i, (unsigned)SCH_ROLLOVER_WORK_CONSERVING_SWITCH_SEC);
 	sch_init_cycle_accounting(&(dpa_schs_ctx[i]), data_from_host);
 	sch_init_bandwidth_accounting(&(dpa_schs_ctx[i]), data_from_host);
 #if SCH_LOOP_ITER_REPORT
