@@ -124,9 +124,9 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 						sch_ctx->tenant_bw_budget_cap[t],
 						bw_used,
 						&sch_ctx->tenant_bw_budget[t]);
-	#if SCH_CYCLE_USAGE_REPORT
+#if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] += cycle_used;
-	#endif
+#endif
 	}
 
 	for (uint32_t t = 0; t < tenants_num; t++) {
