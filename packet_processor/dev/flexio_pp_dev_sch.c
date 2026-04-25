@@ -71,7 +71,7 @@ static inline __attribute__((always_inline)) size_t
 sch_budget_settle(size_t quota, size_t cap, size_t used, size_t *budget)
 {
 	size_t carried = *budget > used ? *budget - used : 0;
-	size_t headroom = cap > quota ? cap - quota : 0;
+	size_t headroom = cap - quota;
 
 	if (carried > headroom) {
 		*budget = cap;
