@@ -145,8 +145,8 @@ sch_drf_alloc(uint64_t delta_q20, size_t target)
 static inline void
 sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 			uint32_t tenants_num,
-			size_t *cycle_pool,
-			size_t *bw_pool)
+			register size_t cycle_pool,
+			register size_t bw_pool)
 {
 	register size_t cycle_target_sum = 0;
 	register size_t bw_target_sum = 0;
@@ -185,11 +185,11 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 	// 根据资源池中的冗余资源数量和租户的借用需求，计算公共最大资源借用比例
 	if (cycle_target_sum) {
 		common_delta_q20 = sch_min_u64(common_delta_q20,
-					       sch_ratio_q20(*cycle_pool, cycle_target_sum));
+					       sch_ratio_q20(cycle_pool, cycle_target_sum));
 	}
 	if (bw_target_sum) {
 		common_delta_q20 = sch_min_u64(common_delta_q20,
-					       sch_ratio_q20(*bw_pool, bw_target_sum));
+					       sch_ratio_q20(bw_pool, bw_target_sum));
 	}
 	if (!common_delta_q20) {
 		return;
@@ -219,12 +219,12 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 			if (alloc > room) {
 				alloc = room;
 			}
-			if (alloc > *cycle_pool) {
-				alloc = *cycle_pool;
+			if (alloc > cycle_pool) {
+				alloc = cycle_pool;
 			}
 #endif
 			sch_ctx->tenant_cycle_budget[t] += alloc;
-			*cycle_pool -= alloc;
+			cycle_pool -= alloc;
 		} else {
 #if assert_debug
 			if (sch_ctx->tenant_bw_budget[t] < sch_ctx->tenant_bw_budget_cap[t]) {
@@ -238,12 +238,12 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 			if (alloc > room) {
 				alloc = room;
 			}
-			if (alloc > *bw_pool) {
-				alloc = *bw_pool;
+			if (alloc > bw_pool) {
+				alloc = bw_pool;
 			}
 #endif
 			sch_ctx->tenant_bw_budget[t] += alloc;
-			*bw_pool -= alloc;
+			bw_pool -= alloc;
 		}
 	}
 }
@@ -307,7 +307,7 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		__atomic_store_n(&sch_ctx->restrict_tenant[single_active_tenant],
 				 TENANT_RESTRICT_NONE, __ATOMIC_RELAXED);
 	} else if (active_count > 1) {
-		sch_distribute_drf_pool(sch_ctx, tenants_num, &cycle_pool, &bw_pool);
+		sch_distribute_drf_pool(sch_ctx, tenants_num, cycle_pool, bw_pool);
 		for (register uint32_t t = 0; t < tenants_num; t++) {
 			if (sch_ctx->restrict_tenant[t]) {
 				__atomic_store_n(&sch_ctx->restrict_tenant[t],
