@@ -67,11 +67,11 @@ sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 #define TENANT_RESTRICT_CYCLE 1
 #define TENANT_RESTRICT_BW 2
 
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {40, 60};
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {60, 40};
 // static uint32_t cycle_weights[MAX_TENANT_NUM] = {30, 70};
 // static uint32_t cycle_weights[MAX_TENANT_NUM] = {50, 50};
 
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {60, 40};
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {40, 60};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {30, 60};
 
