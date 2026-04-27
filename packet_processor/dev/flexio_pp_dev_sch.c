@@ -148,16 +148,15 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 			size_t *cycle_pool,
 			size_t *bw_pool)
 {
-	size_t cycle_target_sum = 0;
-	size_t bw_target_sum = 0;
-	uint64_t common_delta_q20 = DRF_CAP_EXTRA_Q20;
+	register size_t cycle_target_sum = 0;
+	register size_t bw_target_sum = 0;
+	register uint64_t common_delta_q20 = DRF_CAP_EXTRA_Q20;
 
 	// 判断每个租户的主导资源，根据可以借用的资源上限计算公共最大资源借用比例
-	for (uint32_t t = 0; t < tenants_num; t++) {
-		size_t room = 0;
-		size_t target = 0;
-		uint8_t tenant_restriction =
-			__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED);
+	for (register uint32_t t = 0; t < tenants_num; t++) {
+		register size_t room = 0;
+		register size_t target = 0;
+		register uint8_t tenant_restriction = sch_ctx->restrict_tenant[t];
 
 		if (!tenant_restriction) {
 			continue;
@@ -170,7 +169,7 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 				       sch_ctx->tenant_cycle_budget[t];
 			}
 			cycle_target_sum += target;
-		} else if (tenant_restriction == TENANT_RESTRICT_BW) {
+		} else {
 			target = sch_ctx->tenant_bw_target[t];
 			if (sch_ctx->tenant_bw_budget[t] < sch_ctx->tenant_bw_budget_cap[t]) {
 				room = sch_ctx->tenant_bw_budget_cap[t] -
@@ -196,11 +195,10 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 		return;
 	}
 
-	for (uint32_t t = 0; t < tenants_num; t++) {
-		size_t alloc = 0;
-		size_t room = 0;
-		uint8_t tenant_restriction =
-			__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED);
+	for (register uint32_t t = 0; t < tenants_num; t++) {
+		register size_t alloc = 0;
+		register size_t room = 0;
+		register uint8_t tenant_restriction = sch_ctx->restrict_tenant[t];
 
 		(void)room;
 
@@ -227,7 +225,7 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 #endif
 			sch_ctx->tenant_cycle_budget[t] += alloc;
 			*cycle_pool -= alloc;
-		} else if (tenant_restriction == TENANT_RESTRICT_BW) {
+		} else {
 #if assert_debug
 			if (sch_ctx->tenant_bw_budget[t] < sch_ctx->tenant_bw_budget_cap[t]) {
 				room = sch_ctx->tenant_bw_budget_cap[t] -
@@ -254,16 +252,15 @@ static inline void
 sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		    uint32_t tenants_num)
 {
-	size_t cycle_pool = 0;
-	size_t bw_pool = 0;
-	size_t cycle_used = 0;
-	size_t bw_used = 0;
-	uint32_t active_count = 0;
-	uint32_t single_active_tenant = 0;
+	register size_t cycle_pool = 0;
+	register size_t bw_pool = 0;
+	register uint32_t active_count = 0;
+	register uint32_t single_active_tenant = 0;
 
-	for (uint32_t t = 0; t < tenants_num; t++) {
-		uint8_t tenant_restriction =
-			__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED);
+	for (register uint32_t t = 0; t < tenants_num; t++) {
+		register size_t cycle_used = 0;
+		register size_t bw_used = 0;
+		register uint8_t tenant_restriction = sch_ctx->restrict_tenant[t];
 
 		cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0,
 						__ATOMIC_RELAXED);
@@ -281,55 +278,42 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		sch_ctx->tenant_cycle_report_used[t] += cycle_used;
 #endif
 #if SCH_DRF_D_REPORT
-		uint64_t cycle_d_q20 =
-			sch_ratio_q20(cycle_used, sch_ctx->tenant_cycle_target[t]);
-		uint64_t bw_d_q20 =
-			sch_ratio_q20(bw_used, sch_ctx->tenant_bw_target[t]);
-		sch_ctx->tenant_d_report_total_q20[t] +=
-			cycle_d_q20 > bw_d_q20 ? cycle_d_q20 : bw_d_q20;
+		sch_ctx->tenant_d_report_cycle_used[t] += cycle_used;
+		sch_ctx->tenant_d_report_bw_used[t] += bw_used;
 		sch_ctx->tenant_d_report_periods[t]++;
 #endif
 		if (tenant_restriction) {
 			active_count++;
 			single_active_tenant = t;
-		}
-	}
-
-	for (uint32_t t = 0; t < tenants_num; t++) {
-		uint8_t tenant_restriction =
-			__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED);
-
-		if (!tenant_restriction) {
-			continue;
-		}
-
-		if (tenant_restriction == TENANT_RESTRICT_CYCLE) {
-			cycle_pool +=
-				sch_budget_reclaim_over_target(&sch_ctx->tenant_cycle_budget[t],
-							       sch_ctx->tenant_cycle_target[t]);
-		} else if (tenant_restriction == TENANT_RESTRICT_BW) {
-			bw_pool +=
-				sch_budget_reclaim_over_target(&sch_ctx->tenant_bw_budget[t],
-							       sch_ctx->tenant_bw_target[t]);
+			if (tenant_restriction == TENANT_RESTRICT_CYCLE) {
+				cycle_pool +=
+					sch_budget_reclaim_over_target(&sch_ctx->tenant_cycle_budget[t],
+								       sch_ctx->tenant_cycle_target[t]);
+			} else {
+				bw_pool +=
+					sch_budget_reclaim_over_target(&sch_ctx->tenant_bw_budget[t],
+								       sch_ctx->tenant_bw_target[t]);
+			}
 		}
 	}
 
 	if (active_count == 1) {
-		cycle_pool =
-			sch_budget_receive(&sch_ctx->tenant_cycle_budget[single_active_tenant],
-					   sch_ctx->tenant_cycle_budget_cap[single_active_tenant],
-					   cycle_pool);
-		bw_pool =
-			sch_budget_receive(&sch_ctx->tenant_bw_budget[single_active_tenant],
-					   sch_ctx->tenant_bw_budget_cap[single_active_tenant],
-					   bw_pool);
-	} else {
+		sch_budget_receive(&sch_ctx->tenant_cycle_budget[single_active_tenant],
+				   sch_ctx->tenant_cycle_budget_cap[single_active_tenant],
+				   cycle_pool);
+		sch_budget_receive(&sch_ctx->tenant_bw_budget[single_active_tenant],
+				   sch_ctx->tenant_bw_budget_cap[single_active_tenant],
+				   bw_pool);
+		__atomic_store_n(&sch_ctx->restrict_tenant[single_active_tenant],
+				 TENANT_RESTRICT_NONE, __ATOMIC_RELAXED);
+	} else if (active_count > 1) {
 		sch_distribute_drf_pool(sch_ctx, tenants_num, &cycle_pool, &bw_pool);
-	}
-
-	for (uint32_t t = 0; t < tenants_num; t++) {
-		__atomic_store_n(&sch_ctx->restrict_tenant[t], TENANT_RESTRICT_NONE,
-				 __ATOMIC_RELAXED);
+		for (register uint32_t t = 0; t < tenants_num; t++) {
+			if (sch_ctx->restrict_tenant[t]) {
+				__atomic_store_n(&sch_ctx->restrict_tenant[t],
+						 TENANT_RESTRICT_NONE, __ATOMIC_RELAXED);
+			}
+		}
 	}
 
 }
@@ -408,14 +392,21 @@ sch_report_drf_d(struct dpa_sche_context *sch_ctx, int sch_id, uint32_t tenants_
 {
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		size_t periods = sch_ctx->tenant_d_report_periods[t];
-		size_t avg_q20 = periods ?
-				 sch_ctx->tenant_d_report_total_q20[t] / periods : 0;
+		size_t cycle_target = sch_ctx->tenant_cycle_target[t] * periods;
+		size_t bw_target = sch_ctx->tenant_bw_target[t] * periods;
+		size_t cycle_avg_q20 =
+			sch_ratio_q20(sch_ctx->tenant_d_report_cycle_used[t], cycle_target);
+		size_t bw_avg_q20 =
+			sch_ratio_q20(sch_ctx->tenant_d_report_bw_used[t], bw_target);
+		size_t avg_q20 = cycle_avg_q20 > bw_avg_q20 ?
+				 cycle_avg_q20 : bw_avg_q20;
 		size_t avg_x1000 = (avg_q20 * 1000) >> DRF_SHIFT;
 
 		flexio_dev_print("sch %d drf D report: tenant %u periods=%4zu avg_q20=%zu avg_x1000=%zu\n",
 				 sch_id, t, periods, avg_q20, avg_x1000);
 		sch_ctx->tenant_d_report_periods[t] = 0;
-		sch_ctx->tenant_d_report_total_q20[t] = 0;
+		sch_ctx->tenant_d_report_cycle_used[t] = 0;
+		sch_ctx->tenant_d_report_bw_used[t] = 0;
 	}
 }
 #endif

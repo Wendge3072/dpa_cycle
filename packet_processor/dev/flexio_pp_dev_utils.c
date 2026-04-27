@@ -191,7 +191,8 @@ void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 #if SCH_DRF_D_REPORT
 	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
 		dpa_schs_ctx[i].tenant_d_report_periods[t] = 0;
-		dpa_schs_ctx[i].tenant_d_report_total_q20[t] = 0;
+		dpa_schs_ctx[i].tenant_d_report_cycle_used[t] = 0;
+		dpa_schs_ctx[i].tenant_d_report_bw_used[t] = 0;
 	}
 #endif
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {

@@ -31,7 +31,7 @@ sch 线程每秒钟汇报租户 cycle 使用量的开关
 /* 
 sch 线程每秒钟汇报 设置资源预算 开销的开关
 */
-#define SCH_ROLLOVER_COST_REPORT 0
+#define SCH_ROLLOVER_COST_REPORT 1
 
 /* 
 sch 线程每秒钟汇报每调度周期“资源检查”循环迭代次数的开关
@@ -135,7 +135,8 @@ struct dpa_sche_context {
 #endif
 #if SCH_DRF_D_REPORT
 	size_t tenant_d_report_periods[MAX_TENANT_NUM];
-	size_t tenant_d_report_total_q20[MAX_TENANT_NUM];
+	size_t tenant_d_report_cycle_used[MAX_TENANT_NUM];
+	size_t tenant_d_report_bw_used[MAX_TENANT_NUM];
 #endif
 };
 
