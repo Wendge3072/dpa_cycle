@@ -209,33 +209,41 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 		}
 
 		if (tenant_restriction == TENANT_RESTRICT_CYCLE) {
-			// if (sch_ctx->tenant_cycle_budget[t] < sch_ctx->tenant_cycle_budget_cap[t]) {
-			// 	room = sch_ctx->tenant_cycle_budget_cap[t] -
-			// 	       sch_ctx->tenant_cycle_budget[t];
-			// }
+#if assert_debug
+			if (sch_ctx->tenant_cycle_budget[t] < sch_ctx->tenant_cycle_budget_cap[t]) {
+				room = sch_ctx->tenant_cycle_budget_cap[t] -
+				       sch_ctx->tenant_cycle_budget[t];
+			}
+#endif
 			alloc = sch_drf_alloc(common_delta_q20,
 					      sch_ctx->tenant_cycle_target[t]);
-			// if (alloc > room) {
-			// 	alloc = room;
-			// }
-			// if (alloc > *cycle_pool) {
-			// 	alloc = *cycle_pool;
-			// }
+#if assert_debug
+			if (alloc > room) {
+				alloc = room;
+			}
+			if (alloc > *cycle_pool) {
+				alloc = *cycle_pool;
+			}
+#endif
 			sch_ctx->tenant_cycle_budget[t] += alloc;
 			*cycle_pool -= alloc;
 		} else if (tenant_restriction == TENANT_RESTRICT_BW) {
-			// if (sch_ctx->tenant_bw_budget[t] < sch_ctx->tenant_bw_budget_cap[t]) {
-			// 	room = sch_ctx->tenant_bw_budget_cap[t] -
-			// 	       sch_ctx->tenant_bw_budget[t];
-			// }
+#if assert_debug
+			if (sch_ctx->tenant_bw_budget[t] < sch_ctx->tenant_bw_budget_cap[t]) {
+				room = sch_ctx->tenant_bw_budget_cap[t] -
+				       sch_ctx->tenant_bw_budget[t];
+			}
+#endif
 			alloc = sch_drf_alloc(common_delta_q20,
 					      sch_ctx->tenant_bw_target[t]);
-			// if (alloc > room) {
-			// 	alloc = room;
-			// }
-			// if (alloc > *bw_pool) {
-			// 	alloc = *bw_pool;
-			// }
+#if assert_debug
+			if (alloc > room) {
+				alloc = room;
+			}
+			if (alloc > *bw_pool) {
+				alloc = *bw_pool;
+			}
+#endif
 			sch_ctx->tenant_bw_budget[t] += alloc;
 			*bw_pool -= alloc;
 		}
