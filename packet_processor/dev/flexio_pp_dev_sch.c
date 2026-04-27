@@ -297,20 +297,18 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		}
 	}
 
-	if (active_count == 1) {
-		flexio_dev_print("sch %u rollover: single active tenant %u gets all pool: cycle_pool=%zu bw_pool=%zu\n",
-				 sch_ctx->idx, single_active_tenant, cycle_pool, bw_pool);
-		cycle_pool =
-			sch_budget_receive(&sch_ctx->tenant_cycle_budget[single_active_tenant],
-					   sch_ctx->tenant_cycle_budget_cap[single_active_tenant],
-					   cycle_pool);
-		bw_pool =
-			sch_budget_receive(&sch_ctx->tenant_bw_budget[single_active_tenant],
-					   sch_ctx->tenant_bw_budget_cap[single_active_tenant],
-					   bw_pool);
-	} else if (active_count > 1) {
+	// if (active_count == 1) {
+	// 	cycle_pool =
+	// 		sch_budget_receive(&sch_ctx->tenant_cycle_budget[single_active_tenant],
+	// 				   sch_ctx->tenant_cycle_budget_cap[single_active_tenant],
+	// 				   cycle_pool);
+	// 	bw_pool =
+	// 		sch_budget_receive(&sch_ctx->tenant_bw_budget[single_active_tenant],
+	// 				   sch_ctx->tenant_bw_budget_cap[single_active_tenant],
+	// 				   bw_pool);
+	// } else if (active_count > 1) {
 		sch_distribute_drf_pool(sch_ctx, tenants_num, &cycle_pool, &bw_pool);
-	}
+	// }
 
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		__atomic_store_n(&sch_ctx->restrict_tenant[t], TENANT_RESTRICT_NONE,
