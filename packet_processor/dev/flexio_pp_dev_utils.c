@@ -188,9 +188,11 @@ void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	dpa_schs_ctx[i].rollover_cost_report_periods = 0;
 	dpa_schs_ctx[i].rollover_cost_report_total_cycles = 0;
 #endif
-#if SCH_DRF_DELTA_REPORT
-	dpa_schs_ctx[i].drf_delta_report_periods = 0;
-	dpa_schs_ctx[i].drf_delta_report_total = 0;
+#if SCH_DRF_D_REPORT
+	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
+		dpa_schs_ctx[i].tenant_d_report_periods[t] = 0;
+		dpa_schs_ctx[i].tenant_d_report_total_q20[t] = 0;
+	}
 #endif
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 		dpa_schs_ctx[i].queues[j].sq_lkey = data_from_host->queues[j].sq_transf.wqd_mkey_id;
