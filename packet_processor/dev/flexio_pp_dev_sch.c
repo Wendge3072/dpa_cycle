@@ -77,18 +77,9 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 static inline __attribute__((always_inline)) size_t
 sch_budget_settle(size_t quota, size_t cap, size_t used, size_t *budget)
 {
-	register size_t old_budget = *budget;
-	register size_t carried = 0;
-	register size_t headroom = cap - quota;
+	size_t carried = *budget > used ? *budget - used : 0;
+	size_t headroom = cap - quota;
 
-	if (used >= old_budget) {
-		register size_t debt = used - old_budget;
-
-		*budget = quota > debt ? quota - debt : 0;
-		return 0;
-	}
-
-	carried = old_budget - used;
 	if (carried > headroom) {
 		*budget = cap;
 		return carried - headroom;
