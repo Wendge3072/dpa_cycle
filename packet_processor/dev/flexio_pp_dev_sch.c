@@ -45,6 +45,20 @@ sch_check_workers(struct flexio_dev_thread_ctx *dtctx,
 	}
 }
 
+static inline __attribute__((always_inline)) uint8_t
+sch_select_dominant_resource(size_t cycle_amount,
+			     size_t cycle_target,
+			     size_t bw_amount,
+			     size_t bw_target)
+{
+	if ((uint64_t)cycle_amount * bw_target >=
+	    (uint64_t)bw_amount * cycle_target) {
+		return TENANT_RESTRICT_CYCLE;
+	}
+
+	return TENANT_RESTRICT_BW;
+}
+
 static inline void
 sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 {
@@ -63,7 +77,12 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 			restriction = TENANT_RESTRICT_CYCLE;
 		}
 		if (current_bw_used >= sch_ctx->tenant_bw_budget[t]) {
-			restriction = TENANT_RESTRICT_BW;
+			restriction = restriction ?
+				      sch_select_dominant_resource(current_cycle_used,
+								   sch_ctx->tenant_cycle_budget[t],
+								   current_bw_used,
+								   sch_ctx->tenant_bw_budget[t]) :
+				      TENANT_RESTRICT_BW;
 		}
 		if (restriction) {
 			__atomic_store_n(&sch_ctx->restrict_tenant[t], restriction,
@@ -246,6 +265,24 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 			bw_pool -= alloc;
 		}
 	}
+
+	for (register uint32_t t = 0; t < tenants_num; t++) {
+		register uint8_t tenant_restriction = sch_ctx->restrict_tenant[t];
+
+		if (!tenant_restriction) {
+			continue;
+		}
+
+		if (tenant_restriction == TENANT_RESTRICT_CYCLE) {
+			bw_pool = sch_budget_receive(&sch_ctx->tenant_bw_budget[t],
+						     sch_ctx->tenant_bw_budget_cap[t],
+						     bw_pool);
+		} else {
+			cycle_pool = sch_budget_receive(&sch_ctx->tenant_cycle_budget[t],
+							sch_ctx->tenant_cycle_budget_cap[t],
+							cycle_pool);
+		}
+	}
 }
 
 static inline void
@@ -283,6 +320,12 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		sch_ctx->tenant_d_report_periods[t]++;
 #endif
 		if (tenant_restriction) {
+			tenant_restriction =
+				sch_select_dominant_resource(cycle_used,
+							     sch_ctx->tenant_cycle_target[t],
+							     bw_used,
+							     sch_ctx->tenant_bw_target[t]);
+			sch_ctx->restrict_tenant[t] = tenant_restriction;
 			active_count++;
 			single_active_tenant = t;
 			if (tenant_restriction == TENANT_RESTRICT_CYCLE) {
