@@ -31,7 +31,7 @@ sch 线程每秒钟汇报租户 cycle 使用量的开关
 /* 
 sch 线程每秒钟汇报 设置资源预算 开销的开关
 */
-#define SCH_ROLLOVER_COST_REPORT 1
+#define SCH_ROLLOVER_COST_REPORT 0
 
 /* 
 sch 线程每秒钟汇报每调度周期“资源检查”循环迭代次数的开关
