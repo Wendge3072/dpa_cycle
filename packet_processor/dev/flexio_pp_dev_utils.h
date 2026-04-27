@@ -51,7 +51,7 @@ sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 #define assert_debug 0
 
 #define DEFAULT_LINK_BANDWIDTH_BPS 80000000000ULL
-#define MAX_CYCLE_PERCENTAGE 7810
+#define MAX_CYCLE_PERCENTAGE 8000
 #define MAX_CYCLE_TOTAL 10000
 #define WORKER_BATCH_SIZE 1048576UL
 #define WORKER_QUEUE_BURST_SIZE (128)
