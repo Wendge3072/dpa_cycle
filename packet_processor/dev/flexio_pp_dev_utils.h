@@ -51,6 +51,14 @@ sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 #define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
 #define WC_BUDGET_CAP_NUM 2
 #define WC_BUDGET_CAP_DEN 1
+#define DRF_SHIFT 20
+#define DRF_CAP_EXTRA_Q20 \
+	(WC_BUDGET_CAP_NUM > WC_BUDGET_CAP_DEN ? \
+	 ((((uint64_t)WC_BUDGET_CAP_NUM - WC_BUDGET_CAP_DEN) << DRF_SHIFT) / WC_BUDGET_CAP_DEN) : 0)
+
+#define TENANT_RESTRICT_NONE 0
+#define TENANT_RESTRICT_CYCLE 1
+#define TENANT_RESTRICT_BW 2
 
 static uint32_t cycle_weights[MAX_TENANT_NUM] = {60, 40};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {80, 10}; 

@@ -121,7 +121,7 @@ sch_init_cycle_accounting(struct dpa_sche_context *sch_ctx,
 		sch_ctx->tenant_cycle_budget[t] = tenant_quota;
 		sch_ctx->tenant_cycle_budget_cap[t] = sch_budget_cap(tenant_quota);
 		sch_ctx->tenant_cycle_consumed[t] = 0;
-		sch_ctx->restrict_tenant[t] = 0;
+		sch_ctx->restrict_tenant[t] = TENANT_RESTRICT_NONE;
 #if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] = 0;
 #endif

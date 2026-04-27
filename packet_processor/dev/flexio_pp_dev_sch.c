@@ -51,6 +51,7 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		size_t current_cycle_used = 0;
 		size_t current_bw_used = 0;
+		uint8_t restriction = TENANT_RESTRICT_NONE;
 
 		if (__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED)) {
 			continue;
@@ -58,9 +59,15 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 
 		current_cycle_used = __atomic_load_n(&sch_ctx->tenant_cycle_consumed[t], __ATOMIC_RELAXED);
 		current_bw_used = __atomic_load_n(&sch_ctx->tenant_bw_consumed[t], __ATOMIC_RELAXED);
-		if (current_cycle_used >= sch_ctx->tenant_cycle_budget[t] ||
-		    current_bw_used >= sch_ctx->tenant_bw_budget[t]) {
-			__atomic_store_n(&sch_ctx->restrict_tenant[t], 1, __ATOMIC_RELAXED);
+		if (current_cycle_used >= sch_ctx->tenant_cycle_budget[t]) {
+			restriction = TENANT_RESTRICT_CYCLE;
+		}
+		if (current_bw_used >= sch_ctx->tenant_bw_budget[t]) {
+			restriction = TENANT_RESTRICT_BW;
+		}
+		if (restriction) {
+			__atomic_store_n(&sch_ctx->restrict_tenant[t], restriction,
+					 __ATOMIC_RELAXED);
 		}
 	}
 }
@@ -99,6 +106,142 @@ sch_budget_receive(size_t *budget, size_t cap, size_t shared_budget)
 	return shared_budget - borrow;
 }
 
+static inline __attribute__((always_inline)) size_t
+sch_budget_reclaim_over_target(size_t *budget, size_t target)
+{
+	size_t excess = 0;
+
+	if (*budget <= target) {
+		return 0;
+	}
+
+	excess = *budget - target;
+	*budget = target;
+	return excess;
+}
+
+static inline __attribute__((always_inline)) uint64_t
+sch_min_u64(uint64_t a, uint64_t b)
+{
+	return a < b ? a : b;
+}
+
+static inline __attribute__((always_inline)) uint64_t
+sch_ratio_q20(size_t amount, size_t target)
+{
+	if (!amount || !target) {
+		return 0;
+	}
+
+	return ((uint64_t)amount << DRF_SHIFT) / target;
+}
+
+static inline __attribute__((always_inline)) size_t
+sch_drf_alloc(uint64_t delta_q20, size_t target)
+{
+	return (size_t)((delta_q20 * target) >> DRF_SHIFT);
+}
+
+static inline void
+sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
+			uint32_t tenants_num,
+			size_t *cycle_pool,
+			size_t *bw_pool)
+{
+	size_t cycle_target_sum = 0;
+	size_t bw_target_sum = 0;
+	uint64_t common_delta_q20 = DRF_CAP_EXTRA_Q20;
+
+	// 判断每个租户的主导资源，根据可以借用的资源上限计算公共最大资源借用比例
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		size_t room = 0;
+		size_t target = 0;
+		uint8_t tenant_restriction =
+			__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED);
+
+		if (!tenant_restriction) {
+			continue;
+		}
+
+		if (tenant_restriction == TENANT_RESTRICT_CYCLE) {
+			target = sch_ctx->tenant_cycle_target[t];
+			if (sch_ctx->tenant_cycle_budget[t] < sch_ctx->tenant_cycle_budget_cap[t]) {
+				room = sch_ctx->tenant_cycle_budget_cap[t] -
+				       sch_ctx->tenant_cycle_budget[t];
+			}
+			cycle_target_sum += target;
+		} else if (tenant_restriction == TENANT_RESTRICT_BW) {
+			target = sch_ctx->tenant_bw_target[t];
+			if (sch_ctx->tenant_bw_budget[t] < sch_ctx->tenant_bw_budget_cap[t]) {
+				room = sch_ctx->tenant_bw_budget_cap[t] -
+				       sch_ctx->tenant_bw_budget[t];
+			}
+			bw_target_sum += target;
+		}
+
+		common_delta_q20 = sch_min_u64(common_delta_q20,
+					       sch_ratio_q20(room, target));
+	}
+
+	// 根据资源池中的冗余资源数量和租户的借用需求，计算公共最大资源借用比例
+	if (cycle_target_sum) {
+		common_delta_q20 = sch_min_u64(common_delta_q20,
+					       sch_ratio_q20(*cycle_pool, cycle_target_sum));
+	}
+	if (bw_target_sum) {
+		common_delta_q20 = sch_min_u64(common_delta_q20,
+					       sch_ratio_q20(*bw_pool, bw_target_sum));
+	}
+	if (!common_delta_q20) {
+		return;
+	}
+
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		size_t alloc = 0;
+		size_t room = 0;
+		uint8_t tenant_restriction =
+			__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED);
+
+		(void)room;
+
+		if (!tenant_restriction) {
+			continue;
+		}
+
+		if (tenant_restriction == TENANT_RESTRICT_CYCLE) {
+			// if (sch_ctx->tenant_cycle_budget[t] < sch_ctx->tenant_cycle_budget_cap[t]) {
+			// 	room = sch_ctx->tenant_cycle_budget_cap[t] -
+			// 	       sch_ctx->tenant_cycle_budget[t];
+			// }
+			alloc = sch_drf_alloc(common_delta_q20,
+					      sch_ctx->tenant_cycle_target[t]);
+			// if (alloc > room) {
+			// 	alloc = room;
+			// }
+			// if (alloc > *cycle_pool) {
+			// 	alloc = *cycle_pool;
+			// }
+			sch_ctx->tenant_cycle_budget[t] += alloc;
+			*cycle_pool -= alloc;
+		} else if (tenant_restriction == TENANT_RESTRICT_BW) {
+			// if (sch_ctx->tenant_bw_budget[t] < sch_ctx->tenant_bw_budget_cap[t]) {
+			// 	room = sch_ctx->tenant_bw_budget_cap[t] -
+			// 	       sch_ctx->tenant_bw_budget[t];
+			// }
+			alloc = sch_drf_alloc(common_delta_q20,
+					      sch_ctx->tenant_bw_target[t]);
+			// if (alloc > room) {
+			// 	alloc = room;
+			// }
+			// if (alloc > *bw_pool) {
+			// 	alloc = *bw_pool;
+			// }
+			sch_ctx->tenant_bw_budget[t] += alloc;
+			*bw_pool -= alloc;
+		}
+	}
+}
+
 static inline void
 sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		    uint32_t tenants_num)
@@ -107,11 +250,13 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 	size_t bw_pool = 0;
 	size_t cycle_used = 0;
 	size_t bw_used = 0;
+	uint32_t active_count = 0;
+	uint32_t single_active_tenant = 0;
 
-	if (tenants_num == 0) {
-		return;
-	}
 	for (uint32_t t = 0; t < tenants_num; t++) {
+		uint8_t tenant_restriction =
+			__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED);
+
 		cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0,
 						__ATOMIC_RELAXED);
 		bw_used = __atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0,
@@ -127,17 +272,47 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 #if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] += cycle_used;
 #endif
+		if (tenant_restriction) {
+			active_count++;
+			single_active_tenant = t;
+		}
 	}
 
 	for (uint32_t t = 0; t < tenants_num; t++) {
-		cycle_pool = sch_budget_receive(&sch_ctx->tenant_cycle_budget[t],
-						sch_ctx->tenant_cycle_budget_cap[t],
-						cycle_pool);
-		bw_pool = sch_budget_receive(&sch_ctx->tenant_bw_budget[t],
-					     sch_ctx->tenant_bw_budget_cap[t],
-					     bw_pool);
+		uint8_t tenant_restriction =
+			__atomic_load_n(&sch_ctx->restrict_tenant[t], __ATOMIC_RELAXED);
 
-		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
+		if (!tenant_restriction) {
+			continue;
+		}
+
+		if (tenant_restriction == TENANT_RESTRICT_CYCLE) {
+			cycle_pool +=
+				sch_budget_reclaim_over_target(&sch_ctx->tenant_cycle_budget[t],
+							       sch_ctx->tenant_cycle_target[t]);
+		} else if (tenant_restriction == TENANT_RESTRICT_BW) {
+			bw_pool +=
+				sch_budget_reclaim_over_target(&sch_ctx->tenant_bw_budget[t],
+							       sch_ctx->tenant_bw_target[t]);
+		}
+	}
+
+	if (active_count == 1) {
+		cycle_pool =
+			sch_budget_receive(&sch_ctx->tenant_cycle_budget[single_active_tenant],
+					   sch_ctx->tenant_cycle_budget_cap[single_active_tenant],
+					   cycle_pool);
+		bw_pool =
+			sch_budget_receive(&sch_ctx->tenant_bw_budget[single_active_tenant],
+					   sch_ctx->tenant_bw_budget_cap[single_active_tenant],
+					   bw_pool);
+	} else if (active_count > 1) {
+		sch_distribute_drf_pool(sch_ctx, tenants_num, &cycle_pool, &bw_pool);
+	}
+
+	for (uint32_t t = 0; t < tenants_num; t++) {
+		__atomic_store_n(&sch_ctx->restrict_tenant[t], TENANT_RESTRICT_NONE,
+				 __ATOMIC_RELAXED);
 	}
 
 }
@@ -154,7 +329,8 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		__atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
 		sch_ctx->tenant_cycle_budget[t] = sch_ctx->tenant_cycle_target[t];
 		sch_ctx->tenant_bw_budget[t] = sch_ctx->tenant_bw_target[t];
-		__atomic_store_n(&sch_ctx->restrict_tenant[t], 0, __ATOMIC_RELAXED);
+		__atomic_store_n(&sch_ctx->restrict_tenant[t], TENANT_RESTRICT_NONE,
+				 __ATOMIC_RELAXED);
 #if SCH_CYCLE_USAGE_REPORT
 		sch_ctx->tenant_cycle_report_used[t] += period_used;
 #endif
