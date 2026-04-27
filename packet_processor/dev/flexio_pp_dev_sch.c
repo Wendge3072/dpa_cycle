@@ -298,6 +298,8 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 	}
 
 	if (active_count == 1) {
+		flexio_dev_print("sch %u rollover: single active tenant %u gets all pool: cycle_pool=%zu bw_pool=%zu\n",
+				 sch_ctx->idx, single_active_tenant, cycle_pool, bw_pool);
 		cycle_pool =
 			sch_budget_receive(&sch_ctx->tenant_cycle_budget[single_active_tenant],
 					   sch_ctx->tenant_cycle_budget_cap[single_active_tenant],
