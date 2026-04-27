@@ -53,7 +53,7 @@ sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 #define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
 #define WC_BUDGET_CAP_NUM 2
 #define WC_BUDGET_CAP_DEN 1
-#define DRF_SHIFT 10
+#define DRF_SHIFT 20
 #define DRF_CAP_EXTRA_Q20 \
 	(WC_BUDGET_CAP_NUM > WC_BUDGET_CAP_DEN ? \
 	 ((((uint64_t)WC_BUDGET_CAP_NUM - WC_BUDGET_CAP_DEN) << DRF_SHIFT) / WC_BUDGET_CAP_DEN) : 0)
