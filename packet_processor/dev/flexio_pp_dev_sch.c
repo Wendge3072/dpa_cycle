@@ -192,6 +192,10 @@ sch_distribute_drf_pool(struct dpa_sche_context *sch_ctx,
 		common_delta_q20 = sch_min_u64(common_delta_q20,
 					       sch_ratio_q20(*bw_pool, bw_target_sum));
 	}
+#if SCH_DRF_DELTA_REPORT
+	sch_ctx->drf_delta_report_total += common_delta_q20;
+	sch_ctx->drf_delta_report_periods++;
+#endif
 	if (!common_delta_q20) {
 		return;
 	}
@@ -393,6 +397,21 @@ sch_report_rollover_cost(struct dpa_sche_context *sch_ctx, int sch_id)
 }
 #endif
 
+#if SCH_DRF_DELTA_REPORT
+static inline void
+sch_report_drf_delta(struct dpa_sche_context *sch_ctx, int sch_id)
+{
+	size_t drf_periods = sch_ctx->drf_delta_report_periods;
+	size_t drf_avg_q20 = drf_periods ?
+			     sch_ctx->drf_delta_report_total / drf_periods : 0;
+
+	flexio_dev_print("sch %d drf delta report: periods=%4zu avg_q20=%zu\n",
+			 sch_id, drf_periods, drf_avg_q20);
+	sch_ctx->drf_delta_report_periods = 0;
+	sch_ctx->drf_delta_report_total = 0;
+}
+#endif
+
 flexio_dev_event_handler_t flexio_scheduler_handle;
 __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	struct host2dev_packet_processor_data_sch *data_from_host = (void *)thread_arg;
@@ -407,7 +426,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 	size_t time_interval = 15;
 	register size_t reschedule_cycle = __dpa_thread_cycles() + time_interval * DPA_FREQ_HZ;
 	register size_t next_sched_cycle = __dpa_thread_cycles() + SCHED_PERIOD_CYCLES;
-#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT || SCH_ROLLOVER_COST_REPORT
+#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT || SCH_ROLLOVER_COST_REPORT || SCH_DRF_DELTA_REPORT
 	register size_t next_report_cycle = __dpa_thread_cycles() + DPA_FREQ_HZ;
 #endif
 	size_t now_cycle = 0;
@@ -448,7 +467,7 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 			next_sched_cycle = now_cycle + SCHED_PERIOD_CYCLES;
 		}
 
-#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT || SCH_ROLLOVER_COST_REPORT
+#if SCH_CYCLE_USAGE_REPORT || SCH_LOOP_ITER_REPORT || SCH_ROLLOVER_COST_REPORT || SCH_DRF_DELTA_REPORT
 		if (now_cycle >= next_report_cycle) {
 #if SCH_CYCLE_USAGE_REPORT
 			sch_report_cycle_usage(this_sch_ctx, i, tenants_num);
@@ -458,6 +477,9 @@ __dpa_global__ void flexio_scheduler_handle(uint64_t thread_arg) {
 #endif
 #if SCH_ROLLOVER_COST_REPORT
 			sch_report_rollover_cost(this_sch_ctx, i);
+#endif
+#if SCH_DRF_DELTA_REPORT
+			sch_report_drf_delta(this_sch_ctx, i);
 #endif
 			next_report_cycle = now_cycle + DPA_FREQ_HZ;
 		}
