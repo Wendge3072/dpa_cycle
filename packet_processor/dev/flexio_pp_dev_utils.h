@@ -31,7 +31,7 @@ sch 线程每秒钟汇报租户 cycle 使用量的开关
 /* 
 sch 线程每秒钟汇报 设置资源预算 开销的开关
 */
-#define SCH_ROLLOVER_COST_REPORT 1
+#define SCH_ROLLOVER_COST_REPORT 0
 
 /* 
 sch 线程每秒钟汇报每调度周期“资源检查”循环迭代次数的开关
@@ -50,7 +50,7 @@ sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 
 #define assert_debug 0
 
-#define DEFAULT_LINK_BANDWIDTH_BPS 80000000000ULL
+#define DEFAULT_LINK_BANDWIDTH_BPS 90000000000ULL
 #define MAX_CYCLE_PERCENTAGE 7805
 #define MAX_CYCLE_TOTAL 10000
 #define WORKER_BATCH_SIZE 1048576UL
@@ -67,10 +67,12 @@ sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 #define TENANT_RESTRICT_CYCLE 1
 #define TENANT_RESTRICT_BW 2
 
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {60, 40};
-// static uint32_t cycle_weights[MAX_TENANT_NUM] = {50, 50};
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {40, 60};
+// static uint32_t cycle_weights[MAX_TENANT_NUM] = {60, 40};
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {50, 50};
+
+// static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {40, 60};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {30, 60};
 
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
