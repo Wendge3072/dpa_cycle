@@ -33,6 +33,42 @@ worker_cycle_report_print(int thd_id,
 }
 #endif
 
+#if WORKER_QUEUE_CYCLE_REPORT
+#define WORKER_CYCLE_REPORT_ACCUMULATE(_thd_ctx, _q, _cycle_delta) \
+	worker_cycle_report_accumulate((_thd_ctx), (_q), (_cycle_delta))
+#else
+#define WORKER_CYCLE_REPORT_ACCUMULATE(_thd_ctx, _q, _cycle_delta) \
+	do { \
+		(void)(_thd_ctx); \
+		(void)(_q); \
+		(void)(_cycle_delta); \
+	} while (0)
+#endif
+
+#define WORKER_DRAIN_QUEUE(_queue_fn) \
+	do { \
+		while (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) != \
+		       rq_queue->rq_cq_ctx.cq_hw_owner_bit && \
+		       queue_burst < WORKER_QUEUE_BURST_SIZE) { \
+			queue_burst++; \
+			if (__atomic_load_n(restricted, __ATOMIC_RELAXED)) { \
+				break; \
+			} \
+			cycle_delta = __dpa_thread_cycles(); \
+			packet_size = _queue_fn(dtctx, rq_queue, tx_sq_ctx, tx_sq_number); \
+			cycle_delta = __dpa_thread_cycles() - cycle_delta; \
+			WORKER_CYCLE_REPORT_ACCUMULATE(thd_ctx, q, cycle_delta); \
+			__atomic_fetch_add(&sch_ctx->tenant_cycle_consumed[q], cycle_delta, \
+					   __ATOMIC_RELAXED); \
+			__atomic_fetch_add(&sch_ctx->tenant_bw_consumed[q], packet_size, \
+					   __ATOMIC_RELAXED); \
+			pkt_count++; \
+			if (pkt_count >= WORKER_BATCH_SIZE) { \
+				goto worker_sleep; \
+			} \
+		} \
+	} while (0)
+
 flexio_dev_event_handler_t flexio_pp_dev_32;
 __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 {	
@@ -44,7 +80,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	struct flexio_dpa_dev_queue *thd_queue = &(thd_ctx->queue);
 	cq_ctx_t *wakeup_cq_ctx = &(thd_queue->rq_cq_ctx);
 	struct flexio_dpa_dev_queue *rq_queues[WORKER_QUEUES_PER_THREAD];
-	pp_workload_fn workloads[WORKER_QUEUES_PER_THREAD];
+	enum pp_workload_type workload_types[WORKER_QUEUES_PER_THREAD];
 	register struct dpa_sche_context *sch_ctx;
 	register struct flexio_dpa_dev_queue *rq_queue = NULL;
 	register size_t pkt_count = 0;
@@ -54,7 +90,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	register sq_ctx_t *tx_sq_ctx;
 	register uint32_t tx_sq_number;
 	register uint8_t *restricted;
-	register pp_workload_fn workload;
+	register enum pp_workload_type workload_type;
 
 
 	flexio_dev_get_thread_ctx(&dtctx);
@@ -71,8 +107,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	rq_queues[0] = __atomic_load_n(&thd_info->assigned_queues[0], __ATOMIC_RELAXED);
 	rq_queues[1] = __atomic_load_n(&thd_info->assigned_queues[1], __ATOMIC_RELAXED);
 	sch_ctx = __atomic_load_n(&thd_info->sch_ctx, __ATOMIC_RELAXED);
-	workloads[0] = sch_ctx->tenant_workload[0];
-	workloads[1] = sch_ctx->tenant_workload[1];
+	workload_types[0] = sch_ctx->tenant_workload_type[0];
+	workload_types[1] = sch_ctx->tenant_workload_type[1];
 #if WORKER_QUEUE_CYCLE_REPORT
 	worker_cycle_report_reset(thd_ctx);
 #endif
@@ -85,8 +121,13 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			}
 
 			rq_queue = rq_queues[q];
-			workload = workloads[q];
+			workload_type = workload_types[q];
 			queue_burst = 0;
+
+			if (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) ==
+			    rq_queue->rq_cq_ctx.cq_hw_owner_bit) {
+				continue;
+			}
 
 #if WORKER_TX_USE_PRIVATE_SQ
 			tx_sq_ctx = &(thd_queue->sq_ctx);
@@ -96,28 +137,17 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			tx_sq_number = tx_sq_ctx->sq_number;
 #endif
 
-			while (flexio_dev_cqe_get_owner(rq_queue->rq_cq_ctx.cqe) != rq_queue->rq_cq_ctx.cq_hw_owner_bit &&
-			       queue_burst < WORKER_QUEUE_BURST_SIZE) {
-				queue_burst++;
-				if (__atomic_load_n(restricted, __ATOMIC_RELAXED)) {
-					break;
-					// continue;
-				}
-				cycle_delta = __dpa_thread_cycles();
-				packet_size = pp_queue(dtctx, rq_queue, tx_sq_ctx, tx_sq_number, workload);
-				cycle_delta = __dpa_thread_cycles() - cycle_delta; 
-#if WORKER_QUEUE_CYCLE_REPORT
-				worker_cycle_report_accumulate(thd_ctx, q, cycle_delta);
-#endif
-				/* Each worker queue slot corresponds to one tenant in the current 2-queue layout. */
-				__atomic_fetch_add(&sch_ctx->tenant_cycle_consumed[q], cycle_delta,
-						 __ATOMIC_RELAXED);
-				__atomic_fetch_add(&sch_ctx->tenant_bw_consumed[q], packet_size,
-						 __ATOMIC_RELAXED);
-				pkt_count++;
-				if (pkt_count >= WORKER_BATCH_SIZE) {
-					goto worker_sleep;
-				}
+			switch (workload_type) {
+			case PP_WORKLOAD_CHECKSUM16:
+				WORKER_DRAIN_QUEUE(pp_queue_checksum16);
+				break;
+			case PP_WORKLOAD_CHECKSUM_NRND:
+				WORKER_DRAIN_QUEUE(pp_queue_checksum_nrnd);
+				break;
+			case PP_WORKLOAD_L2_REFLECTOR:
+			default:
+				WORKER_DRAIN_QUEUE(pp_queue);
+				break;
 			}
 		}
 	}
@@ -131,3 +161,6 @@ worker_sleep:
 	__atomic_store_n(&thd_info->status, EU_OFF, __ATOMIC_RELEASE);
 	flexio_dev_thread_reschedule();
 }
+
+#undef WORKER_DRAIN_QUEUE
+#undef WORKER_CYCLE_REPORT_ACCUMULATE

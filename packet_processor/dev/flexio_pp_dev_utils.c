@@ -171,8 +171,13 @@ sch_init_bandwidth_accounting(struct dpa_sche_context *sch_ctx,
 static void
 sch_init_workloads(struct dpa_sche_context *sch_ctx)
 {
+	static const enum pp_workload_type tenant_workload_types[MAX_TENANT_NUM] = {
+		PP_TENANT0_WORKLOAD_TYPE,
+		PP_TENANT1_WORKLOAD_TYPE,
+	};
+
 	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
-		sch_ctx->tenant_workload[t] = pp_workload_from_type(tenant_workload_types[t]);
+		sch_ctx->tenant_workload_type[t] = tenant_workload_types[t];
 	}
 
 	return;

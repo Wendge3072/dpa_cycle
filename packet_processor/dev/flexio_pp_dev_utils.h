@@ -75,8 +75,6 @@ static uint32_t cycle_weights[MAX_TENANT_NUM] = {50, 50};
 static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {30, 60};
 
-typedef void (*pp_workload_fn)(char *packet, uint32_t packet_size);
-
 enum pp_workload_type {
 	PP_WORKLOAD_L2_REFLECTOR = 0,
 	PP_WORKLOAD_CHECKSUM16,
@@ -87,11 +85,15 @@ enum pp_workload_type {
 #define PP_WORKLOAD_CHECKSUM_ROUNDS 4
 #endif
 
-static enum pp_workload_type tenant_workload_types[MAX_TENANT_NUM] = {
-	PP_WORKLOAD_L2_REFLECTOR,
-	PP_WORKLOAD_L2_REFLECTOR,
-	// PP_WORKLOAD_CHECKSUM16,
-};
+#ifndef PP_TENANT0_WORKLOAD_TYPE
+#define PP_TENANT0_WORKLOAD_TYPE PP_WORKLOAD_L2_REFLECTOR
+#endif
+
+#ifndef PP_TENANT1_WORKLOAD_TYPE
+#define PP_TENANT1_WORKLOAD_TYPE PP_WORKLOAD_L2_REFLECTOR
+#endif
+
+#define PP_MAC_SWAP_MASK 0x0000ffffffffffffULL
 
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
@@ -139,7 +141,7 @@ struct dpa_sche_context {
 	size_t tenant_bw_budget[MAX_TENANT_NUM];
 	size_t tenant_bw_budget_cap[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
-	pp_workload_fn tenant_workload[MAX_TENANT_NUM];
+	enum pp_workload_type tenant_workload_type[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
 	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
 #endif
@@ -207,22 +209,33 @@ pp_aligned_payload_offset(uint32_t alignment)
 	return offset;
 }
 
-static inline void
+static inline __attribute__((always_inline)) void
+pp_swap_mac_fast(char *packet)
+{
+	register uint64_t src_mac = *((uint64_t *)packet);
+	register uint64_t dst_mac = *((uint64_t *)(packet + 6));
+
+	*((uint64_t *)packet) = dst_mac;
+	*((uint64_t *)(packet + 6)) = (src_mac & PP_MAC_SWAP_MASK) |
+				      (dst_mac & ~PP_MAC_SWAP_MASK);
+}
+
+static inline __attribute__((always_inline)) void
 pp_workload_l2_reflector(char *packet, uint32_t packet_size)
 {
 	(void)packet_size;
 
-	swap_mac(packet);
+	pp_swap_mac_fast(packet);
 }
 
-static inline void
+static inline __attribute__((always_inline)) void
 pp_workload_checksum16(char *packet, uint32_t packet_size)
 {
 	register uint32_t payload_size;
 	register uint16_t *payload;
 	volatile uint16_t checksum;
 
-	swap_mac(packet);
+	pp_swap_mac_fast(packet);
 
 	payload_size = pp_payload_size(packet_size);
 	if (payload_size < sizeof(uint16_t)) {
@@ -235,7 +248,7 @@ pp_workload_checksum16(char *packet, uint32_t packet_size)
 	(void) checksum;
 }
 
-static inline void
+static inline __attribute__((always_inline)) void
 pp_workload_checksum_nrnd(char *packet, uint32_t packet_size)
 {
 	register uint32_t payload_offset;
@@ -243,7 +256,7 @@ pp_workload_checksum_nrnd(char *packet, uint32_t packet_size)
 	register uint_test *payload;
 	volatile uint_test checksum;
 
-	swap_mac(packet);
+	pp_swap_mac_fast(packet);
 
 	payload_offset = pp_aligned_payload_offset(sizeof(uint_test));
 	if (packet_size <= payload_offset) {
@@ -263,55 +276,45 @@ pp_workload_checksum_nrnd(char *packet, uint32_t packet_size)
 	(void) checksum;
 }
 
-static inline __attribute__((always_inline)) pp_workload_fn
-pp_workload_from_type(enum pp_workload_type workload_type)
-{
-	if (workload_type == PP_WORKLOAD_CHECKSUM16) {
-		return pp_workload_checksum16;
-	}
-
-	if (workload_type == PP_WORKLOAD_CHECKSUM_NRND) {
-		return pp_workload_checksum_nrnd;
-	}
-
-	return pp_workload_l2_reflector;
+#define PP_DEFINE_QUEUE_WORKLOAD(_name, _workload) \
+static inline __attribute__((always_inline)) uint32_t \
+_name(struct flexio_dev_thread_ctx *dtctx, \
+      struct flexio_dpa_dev_queue *rq_queue, \
+      sq_ctx_t *tx_sq_ctx, \
+      uint32_t tx_sq_number) \
+{ \
+	register cq_ctx_t *rq_cq_ctx = &(rq_queue->rq_cq_ctx); \
+	register rq_ctx_t *rq_ctx = &(rq_queue->rq_ctx); \
+	register struct flexio_dev_wqe_rcv_data_seg *rwqe; \
+	register union flexio_dev_sqe_seg *swqe; \
+	register uint32_t rq_wqe_idx; \
+	register uint32_t data_sz; \
+	register char *rq_data; \
+	\
+	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter); \
+	data_sz = be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt); \
+	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]); \
+	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr); \
+	\
+	_workload(rq_data, data_sz); \
+	\
+	swqe = &(tx_sq_ctx->sq_ring[(tx_sq_ctx->sq_wqe_seg_idx + 2) & SQ_IDX_MASK]); \
+	tx_sq_ctx->sq_wqe_seg_idx += 4; \
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, rq_queue->rq_lkey, (uint64_t)rq_data); \
+	\
+	__dpa_thread_memory_writeback(); \
+	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number); \
+	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr); \
+	com_step_cq(rq_cq_ctx); \
+	\
+	return data_sz; \
 }
 
-static inline __attribute__((always_inline)) uint32_t
-pp_queue(struct flexio_dev_thread_ctx *dtctx,
-	 struct flexio_dpa_dev_queue *rq_queue,
-	 sq_ctx_t *tx_sq_ctx,
-	 uint32_t tx_sq_number,
-	 pp_workload_fn workload)
-{
-	register cq_ctx_t *rq_cq_ctx = &(rq_queue->rq_cq_ctx);
-	register rq_ctx_t *rq_ctx = &(rq_queue->rq_ctx);
-	register struct flexio_dev_wqe_rcv_data_seg *rwqe;
-	register union flexio_dev_sqe_seg *swqe;
-	register uint32_t rq_wqe_idx;
-	register uint32_t data_sz;
-	register char *rq_data;
+PP_DEFINE_QUEUE_WORKLOAD(pp_queue, pp_workload_l2_reflector)
+PP_DEFINE_QUEUE_WORKLOAD(pp_queue_checksum16, pp_workload_checksum16)
+PP_DEFINE_QUEUE_WORKLOAD(pp_queue_checksum_nrnd, pp_workload_checksum_nrnd)
 
-	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter);
-	// data_sz = pp_get_packet_size(rq_queue);
-	data_sz = be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt);
-	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
-	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
-
-	// workload(rq_data, data_sz);
-	swap_mac(rq_data);
-
-	swqe = &(tx_sq_ctx->sq_ring[(tx_sq_ctx->sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
-	tx_sq_ctx->sq_wqe_seg_idx += 4;
-	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, rq_queue->rq_lkey, (uint64_t)rq_data);
-
-	__dpa_thread_memory_writeback();
-	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number);
-	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr);
-	com_step_cq(rq_cq_ctx);
-
-	return data_sz;
-}
+#undef PP_DEFINE_QUEUE_WORKLOAD
 
 flexio_dev_rpc_handler_t thd_ctx_init;
 __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data);
