@@ -89,7 +89,8 @@ enum pp_workload_type {
 
 static enum pp_workload_type tenant_workload_types[MAX_TENANT_NUM] = {
 	PP_WORKLOAD_L2_REFLECTOR,
-	PP_WORKLOAD_CHECKSUM16,
+	PP_WORKLOAD_L2_REFLECTOR,
+	// PP_WORKLOAD_CHECKSUM16,
 };
 
 struct flexio_dpa_dev_queue {
