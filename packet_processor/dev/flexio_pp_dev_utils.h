@@ -75,6 +75,23 @@ static uint32_t cycle_weights[MAX_TENANT_NUM] = {50, 50};
 static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {30, 60};
 
+typedef void (*pp_workload_fn)(char *packet, uint32_t packet_size);
+
+enum pp_workload_type {
+	PP_WORKLOAD_L2_REFLECTOR = 0,
+	PP_WORKLOAD_CHECKSUM16,
+	PP_WORKLOAD_CHECKSUM_NRND,
+};
+
+#ifndef PP_WORKLOAD_CHECKSUM_ROUNDS
+#define PP_WORKLOAD_CHECKSUM_ROUNDS 4
+#endif
+
+static enum pp_workload_type tenant_workload_types[MAX_TENANT_NUM] = {
+	PP_WORKLOAD_L2_REFLECTOR,
+	PP_WORKLOAD_CHECKSUM16,
+};
+
 struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
@@ -121,6 +138,7 @@ struct dpa_sche_context {
 	size_t tenant_bw_budget[MAX_TENANT_NUM];
 	size_t tenant_bw_budget_cap[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
+	pp_workload_fn tenant_workload[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
 	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
 #endif
@@ -170,12 +188,100 @@ pp_get_packet_size(struct flexio_dpa_dev_queue *rq_queue)
 }
 
 static inline __attribute__((always_inline)) uint32_t
+pp_payload_size(uint32_t packet_size)
+{
+	return packet_size > ETH_HEADER_SIZE ? packet_size - ETH_HEADER_SIZE : 0;
+}
+
+static inline __attribute__((always_inline)) uint32_t
+pp_aligned_payload_offset(uint32_t alignment)
+{
+	register uint32_t offset = ETH_HEADER_SIZE;
+	register uint32_t misalignment = offset & (alignment - 1);
+
+	if (misalignment) {
+		offset += alignment - misalignment;
+	}
+
+	return offset;
+}
+
+static inline void
+pp_workload_l2_reflector(char *packet, uint32_t packet_size)
+{
+	(void)packet_size;
+
+	swap_mac(packet);
+}
+
+static inline void
+pp_workload_checksum16(char *packet, uint32_t packet_size)
+{
+	register uint32_t payload_size;
+	register uint16_t *payload;
+	volatile uint16_t checksum;
+
+	swap_mac(packet);
+
+	payload_size = pp_payload_size(packet_size);
+	if (payload_size < sizeof(uint16_t)) {
+		return;
+	}
+
+	payload = (uint16_t *)(packet + ETH_HEADER_SIZE);
+	checksum = calculate_checksum(payload, payload_size / sizeof(uint16_t));
+	// payload[0] = checksum;
+	(void) checksum;
+}
+
+static inline void
+pp_workload_checksum_nrnd(char *packet, uint32_t packet_size)
+{
+	register uint32_t payload_offset;
+	register uint32_t payload_size;
+	register uint_test *payload;
+	volatile uint_test checksum;
+
+	swap_mac(packet);
+
+	payload_offset = pp_aligned_payload_offset(sizeof(uint_test));
+	if (packet_size <= payload_offset) {
+		return;
+	}
+
+	payload_size = packet_size - payload_offset;
+	if (payload_size < sizeof(uint_test)) {
+		return;
+	}
+
+	payload = (uint_test *)(packet + payload_offset);
+	checksum = calculate_checksum_nrnd(payload,
+					   payload_size / sizeof(uint_test),
+					   PP_WORKLOAD_CHECKSUM_ROUNDS);
+	// payload[0] = checksum;
+	(void) checksum;
+}
+
+static inline __attribute__((always_inline)) pp_workload_fn
+pp_workload_from_type(enum pp_workload_type workload_type)
+{
+	if (workload_type == PP_WORKLOAD_CHECKSUM16) {
+		return pp_workload_checksum16;
+	}
+
+	if (workload_type == PP_WORKLOAD_CHECKSUM_NRND) {
+		return pp_workload_checksum_nrnd;
+	}
+
+	return pp_workload_l2_reflector;
+}
+
+static inline __attribute__((always_inline)) uint32_t
 pp_queue(struct flexio_dev_thread_ctx *dtctx,
-	 struct dpa_sche_context *sch_ctx,
-	 uint32_t tenant_id,
 	 struct flexio_dpa_dev_queue *rq_queue,
 	 sq_ctx_t *tx_sq_ctx,
-	 uint32_t tx_sq_number)
+	 uint32_t tx_sq_number,
+	 pp_workload_fn workload)
 {
 	register cq_ctx_t *rq_cq_ctx = &(rq_queue->rq_cq_ctx);
 	register rq_ctx_t *rq_ctx = &(rq_queue->rq_ctx);
@@ -185,16 +291,13 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	register uint32_t data_sz;
 	register char *rq_data;
 
-	(void)sch_ctx;
-	(void)tenant_id;
-
 	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter);
 	// data_sz = pp_get_packet_size(rq_queue);
 	data_sz = be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt);
 	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
-	swap_mac(rq_data);
+	workload(rq_data, data_sz);
 
 	swqe = &(tx_sq_ctx->sq_ring[(tx_sq_ctx->sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	tx_sq_ctx->sq_wqe_seg_idx += 4;

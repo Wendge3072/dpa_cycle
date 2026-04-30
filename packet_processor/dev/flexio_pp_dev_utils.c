@@ -168,6 +168,16 @@ sch_init_bandwidth_accounting(struct dpa_sche_context *sch_ctx,
 	return;
 }
 
+static void
+sch_init_workloads(struct dpa_sche_context *sch_ctx)
+{
+	for (uint32_t t = 0; t < MAX_TENANT_NUM; t++) {
+		sch_ctx->tenant_workload[t] = pp_workload_from_type(tenant_workload_types[t]);
+	}
+
+	return;
+}
+
 /* Initialize the app_ctx structure from the host data.
  *  data_from_host - pointer host2dev_packet_processor_data from host.
  */
@@ -179,6 +189,7 @@ void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	dpa_schs_ctx[i].window_id = data_from_host->window_id;
 	sch_init_cycle_accounting(&(dpa_schs_ctx[i]), data_from_host);
 	sch_init_bandwidth_accounting(&(dpa_schs_ctx[i]), data_from_host);
+	sch_init_workloads(&(dpa_schs_ctx[i]));
 #if SCH_LOOP_ITER_REPORT
 	dpa_schs_ctx[i].sched_loop_current = 0;
 	dpa_schs_ctx[i].sched_loop_report_periods = 0;

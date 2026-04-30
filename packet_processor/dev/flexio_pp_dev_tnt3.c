@@ -44,6 +44,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	struct flexio_dpa_dev_queue *thd_queue = &(thd_ctx->queue);
 	cq_ctx_t *wakeup_cq_ctx = &(thd_queue->rq_cq_ctx);
 	struct flexio_dpa_dev_queue *rq_queues[WORKER_QUEUES_PER_THREAD];
+	pp_workload_fn workloads[WORKER_QUEUES_PER_THREAD];
 	register struct dpa_sche_context *sch_ctx;
 	register struct flexio_dpa_dev_queue *rq_queue = NULL;
 	register size_t pkt_count = 0;
@@ -53,6 +54,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	register sq_ctx_t *tx_sq_ctx;
 	register uint32_t tx_sq_number;
 	register uint8_t *restricted;
+	register pp_workload_fn workload;
 
 
 	flexio_dev_get_thread_ctx(&dtctx);
@@ -69,6 +71,8 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	rq_queues[0] = __atomic_load_n(&thd_info->assigned_queues[0], __ATOMIC_RELAXED);
 	rq_queues[1] = __atomic_load_n(&thd_info->assigned_queues[1], __ATOMIC_RELAXED);
 	sch_ctx = __atomic_load_n(&thd_info->sch_ctx, __ATOMIC_RELAXED);
+	workloads[0] = sch_ctx->tenant_workload[0];
+	workloads[1] = sch_ctx->tenant_workload[1];
 #if WORKER_QUEUE_CYCLE_REPORT
 	worker_cycle_report_reset(thd_ctx);
 #endif
@@ -81,6 +85,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 			}
 
 			rq_queue = rq_queues[q];
+			workload = workloads[q];
 			queue_burst = 0;
 
 #if WORKER_TX_USE_PRIVATE_SQ
@@ -99,7 +104,7 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 					// continue;
 				}
 				cycle_delta = __dpa_thread_cycles();
-				packet_size = pp_queue(dtctx, sch_ctx, q, rq_queue, tx_sq_ctx, tx_sq_number);
+				packet_size = pp_queue(dtctx, rq_queue, tx_sq_ctx, tx_sq_number, workload);
 				cycle_delta = __dpa_thread_cycles() - cycle_delta; 
 #if WORKER_QUEUE_CYCLE_REPORT
 				worker_cycle_report_accumulate(thd_ctx, q, cycle_delta);
