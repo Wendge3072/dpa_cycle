@@ -46,7 +46,7 @@ sch 线程每秒钟汇报租户实际主导资源使用比例 D 的开关
 /*
 sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 */
-#define SCH_ROLLOVER_WORK_CONSERVING 1
+#define SCH_ROLLOVER_WORK_CONSERVING 0
 
 #define assert_debug 0
 
