@@ -298,7 +298,8 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
 
-	workload(rq_data, data_sz);
+	// workload(rq_data, data_sz);
+	swap_mac(rq_data);
 
 	swqe = &(tx_sq_ctx->sq_ring[(tx_sq_ctx->sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	tx_sq_ctx->sq_wqe_seg_idx += 4;
