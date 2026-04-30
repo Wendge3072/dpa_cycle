@@ -54,7 +54,7 @@ sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 #define MAX_CYCLE_PERCENTAGE 7805
 #define MAX_CYCLE_TOTAL 10000
 #define WORKER_BATCH_SIZE 1048576UL
-#define WORKER_QUEUE_BURST_SIZE (128)
+#define WORKER_QUEUE_BURST_SIZE (2)
 #define SCHED_PERIOD_CYCLES (DPA_FREQ_HZ / 1000)
 #define WC_BUDGET_CAP_NUM 2
 #define WC_BUDGET_CAP_DEN 1
