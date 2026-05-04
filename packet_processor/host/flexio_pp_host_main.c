@@ -168,7 +168,11 @@ int main(int argc, char **argv)
 			return -1;
 		}
 		memset(tmp_ptr, 0, mmap_size);
-		sch_ctx[i].mr = ibv_reg_mr(app_ctx.process_pd, tmp_ptr, mmap_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC);
+		sch_ctx[i].mr = ibv_reg_mr(app_ctx.process_pd, tmp_ptr, mmap_size, IBV_ACCESS_LOCAL_WRITE | 
+																		   IBV_ACCESS_REMOTE_WRITE | 
+																		   IBV_ACCESS_REMOTE_READ | 
+																		   IBV_ACCESS_REMOTE_ATOMIC | 
+																		   IBV_ACCESS_RELAXED_ORDERING);
 		if (sch_ctx[i].mr == NULL) {
 			printf("Failed to register MR\n");
 			return -1;
