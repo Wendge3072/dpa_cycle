@@ -4,7 +4,8 @@ size_t scheduler_num = 1;
 size_t tenants_num = 2;
 size_t threads_num_per_scheduler = 8;
 size_t threads_num = 0;
-size_t begin_thread = 16;
+size_t begin_schedr = 0;
+size_t begin_worker = 16;
 uint64_t DMAC = 0xa088c2320440;
 size_t buffer_location = 0;
 size_t use_copy = 1;
@@ -39,9 +40,13 @@ int main(int argc, char **argv)
 	}
 
 	if (argc > 5) {
-        begin_thread = atoi(argv[5]);
-		if (begin_thread < ((scheduler_num + 15) / 16) * 16) {
-			printf("Invalid begin_thread value. It must be at least %d.\n", ((scheduler_num + 15) / 16) * 16);
+        begin_schedr = atoi(argv[5]);
+    }
+
+	if (argc > 5) {
+        begin_worker = atoi(argv[5]);
+		if (begin_worker < ((scheduler_num + 15) / 16) * 16) {
+			printf("Invalid begin_worker value. It must be at least %d.\n", ((scheduler_num + 15) / 16) * 16);
 			return -1;
 		}
     }
@@ -151,7 +156,7 @@ int main(int argc, char **argv)
 		struct flexio_event_handler_attr handler_attr = {0};
 		handler_attr.host_stub_func = flexio_scheduler_handle;
 		handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
-		handler_attr.affinity.id = 176 + i;
+		handler_attr.affinity.id = begin_schedr + i;
 
 		ret = flexio_event_handler_create(app_ctx.flexio_process, &handler_attr, &(sch_ctx[i].event_handler));
 		if (ret != FLEXIO_STATUS_SUCCESS) {
@@ -229,7 +234,7 @@ int main(int argc, char **argv)
 		handler_attr.host_stub_func = flexio_pp_dev_32;
 
         handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
-		handler_attr.affinity.id = i + begin_thread;
+		handler_attr.affinity.id = i + begin_worker;
 
         ret = flexio_event_handler_create(app_ctx.flexio_process, &handler_attr, &(thd_ctx[i].event_handler));
         if (ret != FLEXIO_STATUS_SUCCESS) {
