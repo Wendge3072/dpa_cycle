@@ -43,16 +43,16 @@ int main(int argc, char **argv)
         begin_schedr = atoi(argv[5]);
     }
 
-	if (argc > 5) {
-        begin_worker = atoi(argv[5]);
+	if (argc > 6) {
+        begin_worker = atoi(argv[6]);
 		if (begin_worker < ((scheduler_num + 15) / 16) * 16) {
 			printf("Invalid begin_worker value. It must be at least %d.\n", ((scheduler_num + 15) / 16) * 16);
 			return -1;
 		}
     }
 
-	if (argc > 6) {
-		buffer_location = atoi(argv[6]);
+	if (argc > 7) {
+		buffer_location = atoi(argv[7]);
 	}
 
 	char buf[2];
