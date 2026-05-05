@@ -10,9 +10,11 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	dpa_schs_ctx[i].packets_count = 0;
 	dpa_schs_ctx[i].idx = i;
 	dpa_schs_ctx[i].window_id = data_from_host->window_id;
+	dpa_schs_ctx[i].buffer_location = data_from_host->buffer_location;
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {
 		dpa_schs_ctx[i].queues[j].sq_lkey = data_from_host->queues[j].sq_transf.wqd_mkey_id;
 		dpa_schs_ctx[i].queues[j].rq_lkey = data_from_host->queues[j].rq_transf.wqd_mkey_id;
+		dpa_schs_ctx[i].queues[j].buffer_location = data_from_host->buffer_location;
 
 		/* Set context for RQ's CQ */
 		com_cq_ctx_init(&(dpa_schs_ctx[i].queues[j].rq_cq_ctx),
@@ -42,6 +44,17 @@ sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 		/* Set context for data */
 		com_dt_ctx_init(&(dpa_schs_ctx[i].queues[j].dt_ctx),
 						data_from_host->queues[j].sq_transf.wqd_daddr);
+		if (data_from_host->buffer_location) {
+			dpa_schs_ctx[i].queues[j].rq_ctx.rqd_host_addr =
+				data_from_host->queues[j].rq_transf.wqd_daddr;
+			dpa_schs_ctx[i].queues[j].sq_ctx.sqd_host_addr =
+				data_from_host->queues[j].sq_transf.wqd_daddr;
+		} else {
+			dpa_schs_ctx[i].queues[j].rq_ctx.rqd_dpa_addr =
+				data_from_host->queues[j].rq_transf.wqd_daddr;
+			dpa_schs_ctx[i].queues[j].sq_ctx.sqd_dpa_addr =
+				data_from_host->queues[j].sq_transf.wqd_daddr;
+		}
 	}
 
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {

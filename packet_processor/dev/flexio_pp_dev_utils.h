@@ -29,6 +29,7 @@ struct flexio_dpa_dev_queue {
 	/* lkey - local memory key */
 	uint32_t sq_lkey;
 	uint32_t rq_lkey;
+	int buffer_location;
 	cq_ctx_t rq_cq_ctx;     /* RQ CQ */
 	rq_ctx_t rq_ctx;        /* RQ */
 	sq_ctx_t sq_ctx;        /* SQ */
@@ -83,6 +84,47 @@ extern struct offload_dispatch_info offload_info[190];
 
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 
+static inline __attribute__((always_inline)) int
+pp_queue_acquire_host_buffer(struct flexio_dev_thread_ctx *dtctx,
+			     struct flexio_dpa_dev_queue *queue,
+			     uint32_t window_id)
+{
+	flexio_dev_status_t ret;
+
+	if (!queue->buffer_location)
+		return 0;
+
+	ret = flexio_dev_window_config(dtctx, (uint16_t)window_id, queue->rq_lkey);
+	if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+		flexio_dev_print("failed to config host rq window\n");
+		return -1;
+	}
+	ret = flexio_dev_window_ptr_acquire(dtctx,
+					    (uint64_t)queue->rq_ctx.rqd_host_addr,
+					    &(queue->rq_ctx.rqd_dpa_addr));
+	if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+		flexio_dev_print("failed to acquire host rq buffer\n");
+		return -1;
+	}
+
+	if (queue->sq_lkey != queue->rq_lkey) {
+		ret = flexio_dev_window_config(dtctx, (uint16_t)window_id, queue->sq_lkey);
+		if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+			flexio_dev_print("failed to config host sq window\n");
+			return -1;
+		}
+	}
+	ret = flexio_dev_window_ptr_acquire(dtctx,
+					    (uint64_t)queue->sq_ctx.sqd_host_addr,
+					    &(queue->sq_ctx.sqd_dpa_addr));
+	if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+		flexio_dev_print("failed to acquire host sq buffer\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 static inline __attribute__((always_inline)) void
 pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	 struct flexio_dpa_dev_queue *rq_queue,
@@ -96,19 +138,29 @@ pp_queue(struct flexio_dev_thread_ctx *dtctx,
 	register uint32_t rq_wqe_idx;
 	register uint32_t data_sz;
 	register char *rq_data;
+	register char *rq_data_host;
 
 	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter);
 	data_sz = be32_to_cpu((volatile __be32)rq_cq_ctx->cqe->byte_cnt);
 	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
-	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+	rq_data_host = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+	if (rq_queue->buffer_location) {
+		rq_data = (char *)((flexio_uintptr_t)rq_data_host -
+				   rq_ctx->rqd_host_addr + rq_ctx->rqd_dpa_addr);
+	} else {
+		rq_data = rq_data_host;
+	}
 
 	swap_mac(rq_data);
 
 	swqe = &(tx_sq_ctx->sq_ring[(tx_sq_ctx->sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	tx_sq_ctx->sq_wqe_seg_idx += 4;
-	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, rq_queue->rq_lkey, (uint64_t)rq_data);
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, rq_queue->rq_lkey,
+					     (uint64_t)rq_data_host);
 
 	__dpa_thread_memory_writeback();
+	if (rq_queue->buffer_location)
+		__dpa_thread_window_writeback();
 	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number);
 	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr);
 	com_step_cq(rq_cq_ctx);

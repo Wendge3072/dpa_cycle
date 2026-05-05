@@ -132,28 +132,37 @@ static int cq_mem_alloc(struct flexio_process *process, struct app_transfer_cq *
  * sq_transf - structure with allocated DPA buffers for SQ.
  */
 static int sq_mem_alloc(struct app_context* app_ctx, struct thread_context* thd_ctx, struct flexio_process *process, 
-	struct app_transfer_wq *sq_transf, int index, size_t same_queue)
+	struct app_transfer_wq *sq_transf, int index, size_t buffer_location, size_t use_copy)
 {
-	if (same_queue == 1) {
-		// tmp trick code
-		sq_transf->wqd_daddr = thd_ctx->queues[index].rq_transf.wqd_daddr;
-		thd_ctx->queues[index].sqd_mkey = thd_ctx->queues[index].rqd_mkey;
-		sq_transf->wqd_mkey_id = thd_ctx->queues[index].rq_transf.wqd_mkey_id;
-	}
-	else {
-		/* Allocate DPA heap memory for SQ data. */
+	struct flexio_queues *queue = &thd_ctx->queues[index];
+	size_t same_queue = (use_copy == 0);
+
+	queue->sq_data_reuses_rq = same_queue;
+	if (same_queue) {
+		sq_transf->wqd_daddr = queue->rq_transf.wqd_daddr;
+		sq_transf->wqd_mkey_id = queue->rq_transf.wqd_mkey_id;
+		queue->sqd_mkey = queue->rqd_mkey;
+		queue->sq_data_on_host = queue->rq_data_on_host;
+	} else if (buffer_location == 0) {
 		flexio_buf_dev_alloc(process, Q_DATA_BSIZE, &sq_transf->wqd_daddr);
-		if (!sq_transf->wqd_daddr) {
+		if (!sq_transf->wqd_daddr)
 			return -1;
-		}
-		/* Create an MKey for SQ data buffer to send. */
-		thd_ctx->queues[index].sqd_mkey = create_dpa_mkey(app_ctx, sq_transf->wqd_daddr);
-		if (!thd_ctx->queues[index].sqd_mkey) {
+
+		queue->sqd_mkey = create_dpa_mkey(app_ctx, sq_transf->wqd_daddr);
+		if (!queue->sqd_mkey) {
 			printf("Failed to create an MKey for SQ data buffer\n");
 			return -1;
 		}
-		/* Set SQ's data buffer MKey ID in communication struct. */
-		sq_transf->wqd_mkey_id = flexio_mkey_get_id(thd_ctx->queues[index].sqd_mkey);
+		sq_transf->wqd_mkey_id = flexio_mkey_get_id(queue->sqd_mkey);
+		queue->sq_data_on_host = 0;
+	} else {
+		if (!queue->host_sq_buffer || !queue->host_sq_mkey_id) {
+			printf("Missing host SQ buffer for queue %d\n", index);
+			return -1;
+		}
+		sq_transf->wqd_daddr = (flexio_uintptr_t)queue->host_sq_buffer;
+		sq_transf->wqd_mkey_id = queue->host_sq_mkey_id;
+		queue->sq_data_on_host = 1;
 	}
 	/* Allocate DPA heap memory for SQ ring. */
 	flexio_buf_dev_alloc(process, SQ_RING_BSIZE, &sq_transf->wq_ring_daddr);
@@ -169,26 +178,36 @@ static int sq_mem_alloc(struct app_context* app_ctx, struct thread_context* thd_
  * rq_transf - structure with allocated DPA buffers for RQ.
  */
 static int rq_mem_alloc(struct app_context* app_ctx, struct thread_context* thd_ctx, struct flexio_process *process, 
-	struct app_transfer_wq *rq_transf, int index)
+	struct app_transfer_wq *rq_transf, int index, size_t buffer_location)
 {	
 	/* DBR source memory on the host (to copy). */
 	__be32 dbr[2] = { 0, 0 };
+	struct flexio_queues *queue = &thd_ctx->queues[index];
 
-	/* Allocate DPA heap memory for RQ data. */
-	flexio_buf_dev_alloc(process, Q_DATA_BSIZE, &rq_transf->wqd_daddr);
-	if (!rq_transf->wqd_daddr) {
-		return -1;
-	}
-	/* Create an MKey for RX buffer */
-	thd_ctx->queues[index].rqd_mkey = create_dpa_mkey(app_ctx, thd_ctx->queues[index].rq_transf.wqd_daddr);
-	if (!thd_ctx->queues[index].rqd_mkey) {
-		printf("Failed to create an MKey for RQ data buffer.\n");
-		return -1;
-	}
-	thd_ctx->queues[index].rq_transf.wqd_mkey_id = flexio_mkey_get_id(thd_ctx->queues[index].rqd_mkey);
-	if (!thd_ctx->queues[index].rq_transf.wqd_mkey_id) {
-		printf("Failed to get mkey id for RQ data buffer.\n");
-		return -1;
+	if (buffer_location == 0) {
+		flexio_buf_dev_alloc(process, Q_DATA_BSIZE, &rq_transf->wqd_daddr);
+		if (!rq_transf->wqd_daddr)
+			return -1;
+
+		queue->rqd_mkey = create_dpa_mkey(app_ctx, queue->rq_transf.wqd_daddr);
+		if (!queue->rqd_mkey) {
+			printf("Failed to create an MKey for RQ data buffer.\n");
+			return -1;
+		}
+		queue->rq_transf.wqd_mkey_id = flexio_mkey_get_id(queue->rqd_mkey);
+		if (!queue->rq_transf.wqd_mkey_id) {
+			printf("Failed to get mkey id for RQ data buffer.\n");
+			return -1;
+		}
+		queue->rq_data_on_host = 0;
+	} else {
+		if (!queue->host_rq_buffer || !queue->host_rq_mkey_id) {
+			printf("Missing host RQ buffer for queue %d\n", index);
+			return -1;
+		}
+		queue->rq_transf.wqd_daddr = (flexio_uintptr_t)queue->host_rq_buffer;
+		queue->rq_transf.wqd_mkey_id = queue->host_rq_mkey_id;
+		queue->rq_data_on_host = 1;
 	}
 	/* Allocate DPA heap memory for RQ ring. */
 	flexio_buf_dev_alloc(process, RQ_RING_BSIZE, &rq_transf->wq_ring_daddr);
@@ -204,7 +223,8 @@ static int rq_mem_alloc(struct app_context* app_ctx, struct thread_context* thd_
 	return 0;
 }
 
-int create_app_sq(struct app_context *app_ctx, struct thread_context* thd_ctx, size_t use_copy)
+int create_app_sq(struct app_context *app_ctx, struct thread_context* thd_ctx,
+	size_t buffer_location, size_t use_copy)
 {
 	/* Pointer to the application Flex IO process (ease of use). */
 	struct flexio_process *app_fp = app_ctx->flexio_process;
@@ -254,12 +274,9 @@ int create_app_sq(struct app_context *app_ctx, struct thread_context* thd_ctx, s
 		thd_ctx->queues[i].sq_cq_transf.cq_num = cq_num;
 		/* Set SQ's CQ depth in communication struct. */
 		thd_ctx->queues[i].sq_cq_transf.log_cq_depth = LOG_Q_DEPTH;
-		/* Allocate SQ memory (ring and data) on DPA heap memory. */
-		size_t same_queue = 0;
-		// if (thd_ctx->num_queues > 1 || use_copy == 0){
-		// 	same_queue = 1;
-		// }
-		if (sq_mem_alloc(app_ctx, thd_ctx, app_fp, &thd_ctx->queues[i].sq_transf, i, same_queue)) {
+		/* Allocate SQ memory (ring and data). */
+		if (sq_mem_alloc(app_ctx, thd_ctx, app_fp, &thd_ctx->queues[i].sq_transf,
+				 i, buffer_location, use_copy)) {
 			printf("Failed to allocate memory for SQ\n");
 			return -1;
 		}
@@ -366,7 +383,8 @@ static int init_rq_dbr(struct app_context *app_ctx, struct thread_context * thd_
 }
 
 
-int create_app_rq(struct app_context *app_ctx, struct thread_context* thd_ctx)
+int create_app_rq(struct app_context *app_ctx, struct thread_context* thd_ctx,
+	size_t buffer_location)
 {
 	/* Pointer to the application Flex IO process (ease of use). */
 	struct flexio_process *app_fp = app_ctx->flexio_process;
@@ -421,8 +439,9 @@ int create_app_rq(struct app_context *app_ctx, struct thread_context* thd_ctx)
 		thd_ctx->queues[i].rq_cq_transf.cq_num = cq_num;
 		/* Set RQ's CQ depth in communication struct. */
 		thd_ctx->queues[i].rq_cq_transf.log_cq_depth = LOG_Q_DEPTH;
-		/* Allocate RQ memory (ring and data) on DPA heap memory. */
-		if (rq_mem_alloc(app_ctx, thd_ctx, app_fp, &thd_ctx->queues[i].rq_transf, i)) {
+		/* Allocate RQ memory (ring and data). */
+		if (rq_mem_alloc(app_ctx, thd_ctx, app_fp, &thd_ctx->queues[i].rq_transf,
+				 i, buffer_location)) {
 			printf("Failed to allocate memory for RQ.\n");
 			return -1;
 		}
@@ -615,7 +634,8 @@ int clean_up_app_rq(struct app_context* app_ctx, struct thread_context *thd_ctx)
 			err = -1;
 		}
 
-		if (thd_ctx->queues[i].rq_transf.wqd_daddr &&
+		if (!thd_ctx->queues[i].rq_data_on_host &&
+			thd_ctx->queues[i].rq_transf.wqd_daddr &&
 			flexio_buf_dev_free(app_ctx->flexio_process, thd_ctx->queues[i].rq_transf.wqd_daddr)) {
 			printf("Failed to free rq_transf.wqd_daddr\n");
 			err = -1;
@@ -652,7 +672,9 @@ int clean_up_app_sq(struct app_context* app_ctx, struct thread_context *thd_ctx)
 			err = -1;
 		}
 
-		if (thd_ctx->queues[i].sqd_mkey && flexio_device_mkey_destroy(thd_ctx->queues[i].sqd_mkey)) {
+		if (!thd_ctx->queues[i].sq_data_reuses_rq &&
+			thd_ctx->queues[i].sqd_mkey &&
+			flexio_device_mkey_destroy(thd_ctx->queues[i].sqd_mkey)) {
 			printf("Failed to destroy mkey SQD\n");
 			err = -1;
 		}
@@ -663,7 +685,9 @@ int clean_up_app_sq(struct app_context* app_ctx, struct thread_context *thd_ctx)
 			err = -1;
 		}
 
-		if (thd_ctx->queues[i].sq_transf.wqd_daddr &&
+		if (!thd_ctx->queues[i].sq_data_on_host &&
+			!thd_ctx->queues[i].sq_data_reuses_rq &&
+			thd_ctx->queues[i].sq_transf.wqd_daddr &&
 			flexio_buf_dev_free(app_ctx->flexio_process, thd_ctx->queues[i].sq_transf.wqd_daddr)) {
 			printf("Failed to free sq_transf.wqd_daddr\n");
 			err = -1;

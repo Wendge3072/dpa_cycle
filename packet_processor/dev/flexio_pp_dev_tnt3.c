@@ -68,6 +68,13 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 	worker_queue_burst_report_reset(thd_ctx);
 #endif
 
+	if (thd_ctx->buffer_location) {
+		for (uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
+			if (pp_queue_acquire_host_buffer(dtctx, rq_queues[q], thd_ctx->window_id))
+				goto worker_sleep;
+		}
+	}
+
 	for (;;) {
 		for (register uint32_t q = 0; q < WORKER_QUEUES_PER_THREAD; q++) {
 			register struct flexio_dpa_dev_queue *rq_queue = rq_queues[q];

@@ -22,6 +22,7 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 	dpa_thds_ctx[i].idx = i;
 	queue_ctx->sq_lkey = data_from_host->sq_transf.wqd_mkey_id;
 	queue_ctx->rq_lkey = data_from_host->rq_transf.wqd_mkey_id;
+	queue_ctx->buffer_location = data_from_host->buffer_location;
 
 	/* Set context for RQ's CQ */
 	com_cq_ctx_init(&(queue_ctx->rq_cq_ctx),
@@ -68,8 +69,16 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 		swqe = get_next_sqe(&(queue_ctx->sq_ctx), SQ_IDX_MASK);
 	}
 	queue_ctx->sq_ctx.sq_wqe_seg_idx = 0;
-	queue_ctx->rq_ctx.rqd_dpa_addr = data_from_host->rq_transf.wqd_daddr;
-	queue_ctx->sq_ctx.sqd_dpa_addr = data_from_host->sq_transf.wqd_daddr;
+	if (data_from_host->buffer_location) {
+		queue_ctx->rq_ctx.rqd_host_addr = data_from_host->rq_transf.wqd_daddr;
+		queue_ctx->sq_ctx.sqd_host_addr = data_from_host->sq_transf.wqd_daddr;
+		if (pp_queue_acquire_host_buffer(dtctx, queue_ctx, dpa_thds_ctx[i].window_id)) {
+			flexio_dev_print("failed to acquire worker host queue buffers, thread %d\n", i);
+		}
+	} else {
+		queue_ctx->rq_ctx.rqd_dpa_addr = data_from_host->rq_transf.wqd_daddr;
+		queue_ctx->sq_ctx.sqd_dpa_addr = data_from_host->sq_transf.wqd_daddr;
+	}
 
 	flexio_dev_status_t ret;
 	ret = flexio_dev_window_config(dtctx, (uint16_t)dpa_thds_ctx[i].window_id, data_from_host->result_buffer_mkey_id);

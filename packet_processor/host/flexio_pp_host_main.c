@@ -9,6 +9,65 @@ uint64_t DMAC = 0xa088c2320440;
 size_t buffer_location = 0;
 size_t use_copy = 1;
 
+static size_t align_to_cacheline(size_t size)
+{
+	return (size + 63) & ~(size_t)63;
+}
+
+static int alloc_context_host_memory(struct app_context *app_ctx,
+				     struct thread_context *ctx,
+				     size_t extra_host_buffer_size)
+{
+	size_t queue_buffer_count = buffer_location ? ctx->num_queues * (use_copy ? 2 : 1) : 0;
+	size_t needed_buffer_size = queue_buffer_count * Q_DATA_BSIZE +
+				    SPEED_RESULT_SIZE + extra_host_buffer_size;
+	size_t mmap_size = align_to_cacheline(needed_buffer_size);
+	void *tmp_ptr = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE,
+			     MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
+	char *cursor;
+
+	if (tmp_ptr == MAP_FAILED) {
+		printf("Failed to allocate host buffer\n");
+		return -1;
+	}
+	memset(tmp_ptr, 0, mmap_size);
+
+	ctx->mr = ibv_reg_mr(app_ctx->process_pd, tmp_ptr, mmap_size,
+			     IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
+			     IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC);
+	if (ctx->mr == NULL) {
+		printf("Failed to register MR\n");
+		return -1;
+	}
+
+	ctx->host_alloc_base = tmp_ptr;
+	ctx->host_alloc_size = mmap_size;
+	cursor = (char *)tmp_ptr;
+
+	if (buffer_location) {
+		for (uint32_t i = 0; i < ctx->num_queues; i++) {
+			ctx->queues[i].host_rq_buffer = cursor;
+			ctx->queues[i].host_rq_mkey_id = ctx->mr->lkey;
+			cursor += Q_DATA_BSIZE;
+
+			if (use_copy == 0) {
+				ctx->queues[i].host_sq_buffer = ctx->queues[i].host_rq_buffer;
+			} else {
+				ctx->queues[i].host_sq_buffer = cursor;
+				cursor += Q_DATA_BSIZE;
+			}
+			ctx->queues[i].host_sq_mkey_id = ctx->mr->lkey;
+		}
+	}
+
+	ctx->result_buffer_mkey_id = ctx->mr->lkey;
+	ctx->result_buffer = cursor;
+	cursor += SPEED_RESULT_SIZE;
+	ctx->host_buffer = extra_host_buffer_size ? cursor : NULL;
+
+	return 0;
+}
+
 // #define nic_mode 1
 /* Main host side function.
  * Responsible for allocating resources and making preparations for DPA side envocatin.
@@ -48,6 +107,10 @@ int main(int argc, char **argv)
 
 	if (argc > 6) {
 		buffer_location = atoi(argv[6]);
+	}
+
+	if (argc > 7) {
+		use_copy = atoi(argv[7]);
 	}
 
 	char buf[2];
@@ -158,30 +221,17 @@ int main(int argc, char **argv)
 			printf("Fail tp create event handler.\n");
 			goto cleanup;
 		}
-		void* tmp_ptr = NULL;
-		size_t needed_buffer_size = SPEED_RESULT_SIZE;
-		size_t mmap_size = needed_buffer_size + (64 - 1);
-		mmap_size -= mmap_size % 64;
-		tmp_ptr = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
-		if (tmp_ptr == NULL) {
-			printf("Failed to allocate host buffer\n");
-			return -1;
-		}
-		memset(tmp_ptr, 0, mmap_size);
-		sch_ctx[i].mr = ibv_reg_mr(app_ctx.process_pd, tmp_ptr, mmap_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC);
-		if (sch_ctx[i].mr == NULL) {
-			printf("Failed to register MR\n");
-			return -1;
-		}
-		sch_ctx[i].result_buffer_mkey_id = sch_ctx[i].mr->lkey;
-		sch_ctx[i].result_buffer = (char*)tmp_ptr;
 		sch_ctx[i].thd_id = i;
-		if (create_app_rq(&(app_ctx), &(sch_ctx[i]))) {
+		if (alloc_context_host_memory(&app_ctx, &(sch_ctx[i]), 0)) {
+			err = -1;
+			goto cleanup;
+		}
+		if (create_app_rq(&(app_ctx), &(sch_ctx[i]), buffer_location)) {
 			printf("Failed to create Flex EQ.\n");
 			err = -1;
 			goto cleanup;
 		}
-		if (create_app_sq(&(app_ctx), &(sch_ctx[i]), use_copy)) {
+		if (create_app_sq(&(app_ctx), &(sch_ctx[i]), buffer_location, use_copy)) {
 			printf("Failed to create Flex SQ.\n");
 			err = -1;
 			goto cleanup;
@@ -232,33 +282,19 @@ int main(int argc, char **argv)
 			printf("Fail tp create event handler.\n");
 			goto cleanup;
 		}
-		void* tmp_ptr = NULL;
-		size_t needed_buffer_size = SPEED_RESULT_SIZE + NVME_QUEUE_MEMORY_SIZE;
-		size_t mmap_size = needed_buffer_size + (64 - 1);
-		mmap_size -= mmap_size % 64;
-		tmp_ptr = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
-		if (tmp_ptr == NULL) {
-			printf("Failed to allocate host buffer\n");
-			return -1;
-		}
-		memset(tmp_ptr, 0, mmap_size);
-		thd_ctx[i].mr = ibv_reg_mr(app_ctx.process_pd, tmp_ptr, mmap_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC);
-		if (thd_ctx[i].mr == NULL) {
-			printf("Failed to register MR\n");
-			return -1;
-		}
-		thd_ctx[i].result_buffer_mkey_id = thd_ctx[i].mr->lkey;
-		thd_ctx[i].result_buffer = (char*)tmp_ptr;
-		thd_ctx[i].host_buffer = (char*)tmp_ptr + SPEED_RESULT_SIZE;
 		thd_ctx[i].thd_id = i;
+		if (alloc_context_host_memory(&app_ctx, &(thd_ctx[i]), NVME_QUEUE_MEMORY_SIZE)) {
+			err = -1;
+			goto cleanup;
+		}
 
-		if (create_app_rq(&(app_ctx), &(thd_ctx[i]))) {
+		if (create_app_rq(&(app_ctx), &(thd_ctx[i]), buffer_location)) {
 			printf("Failed to create Flex EQ.\n");
 			err = -1;
 			goto cleanup;
 		}
 
-		if (create_app_sq(&(app_ctx), &(thd_ctx[i]), use_copy)) {
+		if (create_app_sq(&(app_ctx), &(thd_ctx[i]), buffer_location, use_copy)) {
 			printf("Failed to create Flex SQ.\n");
 			err = -1;
 			goto cleanup;
