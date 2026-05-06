@@ -7,7 +7,7 @@ size_t threads_num = 0;
 size_t begin_thread = 16;
 uint64_t DMAC = 0xa088c2320440;
 size_t buffer_location = 0;
-size_t use_copy = 0;
+size_t use_copy = 1;
 
 static size_t align_to_cacheline(size_t size)
 {
