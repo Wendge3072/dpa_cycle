@@ -64,6 +64,7 @@
 #define LOG_Q_DATA_ENTRY_BSIZE 11
 /* SQ/RQ data entry byte size log to value. */
 #define Q_DATA_ENTRY_BSIZE L2V(LOG_Q_DATA_ENTRY_BSIZE)
+#define Q_DATA_ENTRY_BSIZE 1536
 /* SQ/RQ DATA byte size is queue depth times entry byte size. */
 #define Q_DATA_BSIZE (Q_DEPTH * Q_DATA_ENTRY_BSIZE)
 
