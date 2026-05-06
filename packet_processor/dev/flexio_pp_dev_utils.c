@@ -68,8 +68,16 @@ __dpa_rpc__ uint64_t thd_ctx_init(uint64_t data)
 		swqe = get_next_sqe(&(queue_ctx->sq_ctx), SQ_IDX_MASK);
 	}
 	queue_ctx->sq_ctx.sq_wqe_seg_idx = 0;
-	queue_ctx->rq_ctx.rqd_dpa_addr = data_from_host->rq_transf.wqd_daddr;
-	queue_ctx->sq_ctx.sqd_dpa_addr = data_from_host->sq_transf.wqd_daddr;
+	if (data_from_host->buffer_location) {
+		queue_ctx->rq_ctx.rqd_host_addr = data_from_host->rq_transf.wqd_daddr;
+		queue_ctx->sq_ctx.sqd_host_addr = data_from_host->sq_transf.wqd_daddr;
+		if (pp_queue_acquire_host_buffer(dtctx, queue_ctx, dpa_thds_ctx[i].window_id)) {
+			flexio_dev_print("failed to acquire worker host queue buffers, thread %d\n", i);
+		}
+	} else {
+		queue_ctx->rq_ctx.rqd_dpa_addr = data_from_host->rq_transf.wqd_daddr;
+		queue_ctx->sq_ctx.sqd_dpa_addr = data_from_host->sq_transf.wqd_daddr;
+	}
 
 	flexio_dev_status_t ret;
 	ret = flexio_dev_window_config(dtctx, (uint16_t)dpa_thds_ctx[i].window_id, data_from_host->result_buffer_mkey_id);
@@ -192,6 +200,7 @@ void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	dpa_schs_ctx[i].packets_count = 0;
 	dpa_schs_ctx[i].idx = i;
 	dpa_schs_ctx[i].window_id = data_from_host->window_id;
+	dpa_schs_ctx[i].buffer_location = data_from_host->buffer_location;
 	sch_init_cycle_accounting(&(dpa_schs_ctx[i]), data_from_host);
 	sch_init_bandwidth_accounting(&(dpa_schs_ctx[i]), data_from_host);
 	sch_init_workloads(&(dpa_schs_ctx[i]));
@@ -243,6 +252,17 @@ void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 		/* Set context for data */
 		com_dt_ctx_init(&(dpa_schs_ctx[i].queues[j].dt_ctx),
 						data_from_host->queues[j].sq_transf.wqd_daddr);
+		if (data_from_host->buffer_location) {
+			dpa_schs_ctx[i].queues[j].rq_ctx.rqd_host_addr =
+				data_from_host->queues[j].rq_transf.wqd_daddr;
+			dpa_schs_ctx[i].queues[j].sq_ctx.sqd_host_addr =
+				data_from_host->queues[j].sq_transf.wqd_daddr;
+		} else {
+			dpa_schs_ctx[i].queues[j].rq_ctx.rqd_dpa_addr =
+				data_from_host->queues[j].rq_transf.wqd_daddr;
+			dpa_schs_ctx[i].queues[j].sq_ctx.sqd_dpa_addr =
+				data_from_host->queues[j].sq_transf.wqd_daddr;
+		}
 	}
 
 	for (uint32_t j = 0; j < data_from_host->num_queues; j++) {

@@ -71,6 +71,14 @@ struct flexio_queues {
 	/* MKey for RQ data. */
 	struct flexio_mkey *rqd_mkey;
 
+	void *host_rq_buffer;
+	void *host_sq_buffer;
+	uint32_t host_rq_mkey_id;
+	uint32_t host_sq_mkey_id;
+	size_t rq_data_on_host;
+	size_t sq_data_on_host;
+	size_t sq_data_reuses_rq;
+
 	struct mlx5dv_devx_obj *rq_tir_obj;
 
 	struct flow_rule *rx_flow_rule;
@@ -91,6 +99,8 @@ struct thread_context {
 
 	void* result_buffer;
 	void* host_buffer;
+	void* host_alloc_base;
+	size_t host_alloc_size;
 	
 	int thd_id;
 };
@@ -164,6 +174,7 @@ extern flexio_func_t thd_ctx_init;
 // extern flexio_func_t flexio_pp_dev_2;
 // extern flexio_func_t flexio_pp_dev_31;
 extern flexio_func_t flexio_pp_dev_32;
+extern flexio_func_t flexio_pp_dev_32_host;
 extern flexio_func_t flexio_scheduler_handle;
 
 extern size_t scheduler_num;
@@ -187,14 +198,16 @@ int app_open_ibv_ctx(struct app_context *app_ctx, char *device);
  * Returns 0 on success and -1 if the allocation fails.
  * app_ctx - app_ctx - pointer to app_context structure.
  */
-int create_app_sq(struct app_context *app_ctx, struct thread_context* thd_ctx, size_t use_copy);
+int create_app_sq(struct app_context *app_ctx, struct thread_context* thd_ctx,
+	size_t buffer_location, size_t use_copy);
 
 /* Create an RQ over the DPA for receiving packets on DPA.
  * A CQ is also created for the RQ.
  * Returns 0 on success and -1 if the allocation fails.
  * app_ctx - app_ctx - pointer to app_context structure.
  */
-int create_app_rq(struct app_context *app_ctx, struct thread_context* thd_ctx);
+int create_app_rq(struct app_context *app_ctx, struct thread_context* thd_ctx,
+	size_t buffer_location);
 
 /* Copy schedular information to DPA.
  * DPA side needs queue information in order to process the packets.
