@@ -26,7 +26,7 @@ worker 线程每 reschedule 汇报数据包平均处理cycle的开关
 /*
 sch 线程每秒钟汇报租户 cycle 使用量的开关
 */
-#define SCH_CYCLE_USAGE_REPORT 0
+#define SCH_CYCLE_USAGE_REPORT 1
 
 /* 
 sch 线程每秒钟汇报 设置资源预算 开销的开关
@@ -36,7 +36,7 @@ sch 线程每秒钟汇报 设置资源预算 开销的开关
 /* 
 sch 线程每秒钟汇报每调度周期“资源检查”循环迭代次数的开关
 */
-#define SCH_LOOP_ITER_REPORT 1
+#define SCH_LOOP_ITER_REPORT 0
 
 /*
 sch 线程每秒钟汇报租户实际主导资源使用比例 D 的开关
@@ -140,6 +140,7 @@ struct dpa_sche_context {
 	size_t tenant_cycle_budget_cap[MAX_TENANT_NUM];
 	size_t tenant_bw_budget[MAX_TENANT_NUM];
 	size_t tenant_bw_budget_cap[MAX_TENANT_NUM];
+	size_t tenant_cycle_debt[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
 	enum pp_workload_type tenant_workload_type[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
