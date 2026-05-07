@@ -36,7 +36,7 @@ sch 线程每秒钟汇报 设置资源预算 开销的开关
 /* 
 sch 线程每秒钟汇报每调度周期“资源检查”循环迭代次数的开关
 */
-#define SCH_LOOP_ITER_REPORT 1
+#define SCH_LOOP_ITER_REPORT 0
 
 /*
 sch 线程每秒钟汇报租户实际主导资源使用比例 D 的开关
