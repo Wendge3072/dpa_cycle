@@ -21,7 +21,7 @@
 /*
 worker 线程每 reschedule 汇报数据包平均处理cycle的开关
 */
-#define WORKER_QUEUE_CYCLE_REPORT 0
+#define WORKER_QUEUE_CYCLE_REPORT 1
 
 /*
 sch 线程每秒钟汇报租户 cycle 使用量的开关
