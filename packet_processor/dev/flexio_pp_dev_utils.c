@@ -205,6 +205,9 @@ void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
 	sch_init_cycle_accounting(&(dpa_schs_ctx[i]), data_from_host);
 	sch_init_bandwidth_accounting(&(dpa_schs_ctx[i]), data_from_host);
 	sch_init_workloads(&(dpa_schs_ctx[i]));
+#if SCH_CYCLE_USAGE_REPORT
+	dpa_schs_ctx[i].tenant_cycle_report_periods = 0;
+#endif
 #if SCH_LOOP_ITER_REPORT
 	dpa_schs_ctx[i].sched_loop_current = 0;
 	dpa_schs_ctx[i].sched_loop_report_periods = 0;

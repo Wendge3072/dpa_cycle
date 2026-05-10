@@ -343,6 +343,9 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		}
 	}
 
+#if SCH_CYCLE_USAGE_REPORT
+	sch_ctx->tenant_cycle_report_periods++;
+#endif
 	if (active_count == 1) {
 		sch_budget_receive(&sch_ctx->tenant_cycle_budget[single_active_tenant],
 				   sch_ctx->tenant_cycle_budget_cap[single_active_tenant],
@@ -386,6 +389,9 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		sch_ctx->tenant_cycle_report_used[t] += cycle_used;
 #endif
 	}
+#if SCH_CYCLE_USAGE_REPORT
+	sch_ctx->tenant_cycle_report_periods++;
+#endif
 	sch_apply_cycle_debt(sch_ctx, tenants_num);
 }
 #endif
@@ -397,11 +403,16 @@ sch_report_cycle_usage(struct dpa_sche_context *sch_ctx,
 		       int sch_id,
 		       uint32_t tenants_num)
 {
+	size_t report_periods = sch_ctx->tenant_cycle_report_periods ?
+				sch_ctx->tenant_cycle_report_periods : 1;
+
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		flexio_dev_print("sch %d cycle report: tenant %u total_used %8zu\n",
-				 sch_id, t, sch_ctx->tenant_cycle_report_used[t] / 1000);
+				 sch_id, t,
+				 sch_ctx->tenant_cycle_report_used[t] / report_periods);
 		sch_ctx->tenant_cycle_report_used[t] = 0;
 	}
+	sch_ctx->tenant_cycle_report_periods = 0;
 }
 #endif
 

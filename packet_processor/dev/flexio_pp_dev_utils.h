@@ -145,6 +145,7 @@ struct dpa_sche_context {
 	enum pp_workload_type tenant_workload_type[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
 	size_t tenant_cycle_report_used[MAX_TENANT_NUM];
+	size_t tenant_cycle_report_periods;
 #endif
 #if SCH_LOOP_ITER_REPORT
 	size_t sched_loop_current;
