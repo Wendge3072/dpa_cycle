@@ -46,11 +46,11 @@ sch 线程每秒钟汇报租户实际主导资源使用比例 D 的开关
 /*
 sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 */
-#define SCH_ROLLOVER_WORK_CONSERVING 0
+#define SCH_ROLLOVER_WORK_CONSERVING 1
 
 #define assert_debug 0
 
-#define DEFAULT_LINK_BANDWIDTH_BPS (72 * 1000000000ULL)
+#define DEFAULT_LINK_BANDWIDTH_BPS (90 * 1000000000ULL)
 #define MAX_CYCLE_PERCENTAGE 7800
 #define MAX_CYCLE_TOTAL 10000
 #define WORKER_BATCH_SIZE 1048576UL
@@ -72,7 +72,7 @@ sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 static uint32_t cycle_weights[MAX_TENANT_NUM] = {1, 1};
 
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {40, 60};
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {1, 2};
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {3, 6};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {30, 60};
 
 enum pp_workload_type {
