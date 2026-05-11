@@ -54,7 +54,7 @@ worker_cycle_report_print(int thd_id,
 				break; \
 			} \
 			cycle_delta = __dpa_thread_cycles(); \
-			packet_size = _queue_fn(dtctx, rq_queue, tx_sq_ctx, tx_sq_number); \
+			packet_size = _queue_fn(dtctx, thd_ctx, rq_queue, tx_sq_ctx, tx_sq_number); \
 			cycle_delta = __dpa_thread_cycles() - cycle_delta; \
 			queue_cycles += cycle_delta; \
 			WORKER_CYCLE_REPORT_ACCUMULATE(thd_ctx, q, cycle_delta); \
@@ -138,6 +138,9 @@ __dpa_global__ void flexio_pp_dev_32(uint64_t thread_arg)
 #endif
 
 			switch (workload_type) {
+			case PP_WORKLOAD_NOF:
+				WORKER_DRAIN_QUEUE(pp_queue_nof);
+				break;
 			case PP_WORKLOAD_CHECKSUM16:
 				WORKER_DRAIN_QUEUE(pp_queue_checksum16);
 				break;
@@ -237,6 +240,9 @@ __dpa_global__ void flexio_pp_dev_32_host(uint64_t thread_arg)
 #endif
 
 			switch (workload_type) {
+			case PP_WORKLOAD_NOF:
+				WORKER_DRAIN_QUEUE(pp_queue_nof_host);
+				break;
 			case PP_WORKLOAD_CHECKSUM16:
 				WORKER_DRAIN_QUEUE(pp_queue_checksum16_host);
 				break;

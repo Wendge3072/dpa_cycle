@@ -46,11 +46,11 @@ sch 线程每秒钟汇报租户实际主导资源使用比例 D 的开关
 /*
 sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 */
-#define SCH_ROLLOVER_WORK_CONSERVING 1
+#define SCH_ROLLOVER_WORK_CONSERVING 0
 
 #define assert_debug 0
 
-#define DEFAULT_LINK_BANDWIDTH_BPS (200 * 1000000000ULL)
+#define DEFAULT_LINK_BANDWIDTH_BPS (72 * 1000000000ULL)
 #define MAX_CYCLE_PERCENTAGE 7800
 #define MAX_CYCLE_TOTAL 10000
 #define WORKER_BATCH_SIZE 1048576UL
@@ -69,16 +69,17 @@ sch 线程 rollover 模式切换开关 - 是否切换到 work-conserving 模式
 
 // static uint32_t cycle_weights[MAX_TENANT_NUM] = {60, 40};
 // static uint32_t cycle_weights[MAX_TENANT_NUM] = {30, 70};
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {50, 50};
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {1, 1};
 
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {40, 60};
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {45, 45};
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {1, 2};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {30, 60};
 
 enum pp_workload_type {
 	PP_WORKLOAD_L2_REFLECTOR = 0,
 	PP_WORKLOAD_CHECKSUM16,
 	PP_WORKLOAD_CHECKSUM_NRND,
+	PP_WORKLOAD_NOF,
 };
 
 #ifndef PP_WORKLOAD_CHECKSUM_ROUNDS
@@ -316,13 +317,42 @@ pp_workload_checksum_nrnd(char *packet, uint32_t packet_size)
 	(void) checksum;
 }
 
+static inline __attribute__((always_inline)) void
+pp_workload_nof(struct dpa_thread_context *thd_ctx, char *packet, uint32_t packet_size)
+{
+	register uint32_t payload_size;
+	register uint32_t copy_size;
+	register flexio_uintptr_t dst;
+
+	pp_swap_mac_fast(packet);
+
+	if (!thd_ctx->host_buffer) {
+		return;
+	}
+
+	payload_size = pp_payload_size(packet_size);
+	if (!payload_size) {
+		return;
+	}
+
+	copy_size = payload_size > NVME_QUEUE_ENTRY_SIZE ? NVME_QUEUE_ENTRY_SIZE : payload_size;
+	copy_size /= 2;
+	dst = thd_ctx->host_buffer +
+	      (thd_ctx->idx % NVME_QUEUE_ENTRY_NUM) * NVME_QUEUE_ENTRY_SIZE;
+	memcpy((void *)dst, packet + ETH_HEADER_SIZE, copy_size);
+	thd_ctx->idx++;
+	__dpa_thread_window_writeback();
+}
+
 #define PP_DEFINE_QUEUE_WORKLOAD(_name, _workload) \
 static inline __attribute__((always_inline)) uint32_t \
 _name(struct flexio_dev_thread_ctx *dtctx, \
+      struct dpa_thread_context *thd_ctx, \
       struct flexio_dpa_dev_queue *rq_queue, \
       sq_ctx_t *tx_sq_ctx, \
       uint32_t tx_sq_number) \
 { \
+	(void)thd_ctx; \
 	register cq_ctx_t *rq_cq_ctx = &(rq_queue->rq_cq_ctx); \
 	register rq_ctx_t *rq_ctx = &(rq_queue->rq_ctx); \
 	register struct flexio_dev_wqe_rcv_data_seg *rwqe; \
@@ -350,19 +380,58 @@ _name(struct flexio_dev_thread_ctx *dtctx, \
 	return data_sz; \
 }
 
+#define PP_DEFINE_QUEUE_WORKLOAD_CTX(_name, _workload) \
+static inline __attribute__((always_inline)) uint32_t \
+_name(struct flexio_dev_thread_ctx *dtctx, \
+      struct dpa_thread_context *thd_ctx, \
+      struct flexio_dpa_dev_queue *rq_queue, \
+      sq_ctx_t *tx_sq_ctx, \
+      uint32_t tx_sq_number) \
+{ \
+	register cq_ctx_t *rq_cq_ctx = &(rq_queue->rq_cq_ctx); \
+	register rq_ctx_t *rq_ctx = &(rq_queue->rq_ctx); \
+	register struct flexio_dev_wqe_rcv_data_seg *rwqe; \
+	register union flexio_dev_sqe_seg *swqe; \
+	register uint32_t rq_wqe_idx; \
+	register uint32_t data_sz; \
+	register char *rq_data; \
+	\
+	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter); \
+	data_sz = be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt); \
+	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]); \
+	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr); \
+	\
+	_workload(thd_ctx, rq_data, data_sz); \
+	\
+	swqe = &(tx_sq_ctx->sq_ring[(tx_sq_ctx->sq_wqe_seg_idx + 2) & SQ_IDX_MASK]); \
+	tx_sq_ctx->sq_wqe_seg_idx += 4; \
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, rq_queue->rq_lkey, (uint64_t)rq_data); \
+	\
+	__dpa_thread_memory_writeback(); \
+	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number); \
+	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr); \
+	com_step_cq(rq_cq_ctx); \
+	\
+	return data_sz; \
+}
+
 PP_DEFINE_QUEUE_WORKLOAD(pp_queue, pp_workload_l2_reflector)
 PP_DEFINE_QUEUE_WORKLOAD(pp_queue_checksum16, pp_workload_checksum16)
 PP_DEFINE_QUEUE_WORKLOAD(pp_queue_checksum_nrnd, pp_workload_checksum_nrnd)
+PP_DEFINE_QUEUE_WORKLOAD_CTX(pp_queue_nof, pp_workload_nof)
 
+#undef PP_DEFINE_QUEUE_WORKLOAD_CTX
 #undef PP_DEFINE_QUEUE_WORKLOAD
 
 #define PP_DEFINE_QUEUE_WORKLOAD_HOST(_name, _workload) \
 static inline __attribute__((always_inline)) uint32_t \
 _name(struct flexio_dev_thread_ctx *dtctx, \
+      struct dpa_thread_context *thd_ctx, \
       struct flexio_dpa_dev_queue *rq_queue, \
       sq_ctx_t *tx_sq_ctx, \
       uint32_t tx_sq_number) \
 { \
+	(void)thd_ctx; \
 	register cq_ctx_t *rq_cq_ctx = &(rq_queue->rq_cq_ctx); \
 	register rq_ctx_t *rq_ctx = &(rq_queue->rq_ctx); \
 	register struct flexio_dev_wqe_rcv_data_seg *rwqe; \
@@ -394,10 +463,51 @@ _name(struct flexio_dev_thread_ctx *dtctx, \
 	return data_sz; \
 }
 
+#define PP_DEFINE_QUEUE_WORKLOAD_HOST_CTX(_name, _workload) \
+static inline __attribute__((always_inline)) uint32_t \
+_name(struct flexio_dev_thread_ctx *dtctx, \
+      struct dpa_thread_context *thd_ctx, \
+      struct flexio_dpa_dev_queue *rq_queue, \
+      sq_ctx_t *tx_sq_ctx, \
+      uint32_t tx_sq_number) \
+{ \
+	register cq_ctx_t *rq_cq_ctx = &(rq_queue->rq_cq_ctx); \
+	register rq_ctx_t *rq_ctx = &(rq_queue->rq_ctx); \
+	register struct flexio_dev_wqe_rcv_data_seg *rwqe; \
+	register union flexio_dev_sqe_seg *swqe; \
+	register uint32_t rq_wqe_idx; \
+	register uint32_t data_sz; \
+	register char *rq_data; \
+	register char *rq_data_host; \
+	\
+	rq_wqe_idx = be16_to_cpu((volatile __be16)rq_cq_ctx->cqe->wqe_counter); \
+	data_sz = be32_to_cpu((volatile __be32)rq_queue->rq_cq_ctx.cqe->byte_cnt); \
+	rwqe = &(rq_ctx->rq_ring[rq_wqe_idx & RQ_IDX_MASK]); \
+	rq_data_host = (void *)be64_to_cpu((volatile __be64)rwqe->addr); \
+	rq_data = (char *)((flexio_uintptr_t)rq_data_host - \
+			   rq_ctx->rqd_host_addr + rq_ctx->rqd_dpa_addr); \
+	\
+	_workload(thd_ctx, rq_data, data_sz); \
+	\
+	swqe = &(tx_sq_ctx->sq_ring[(tx_sq_ctx->sq_wqe_seg_idx + 2) & SQ_IDX_MASK]); \
+	tx_sq_ctx->sq_wqe_seg_idx += 4; \
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, rq_queue->rq_lkey, (uint64_t)rq_data_host); \
+	\
+	__dpa_thread_memory_writeback(); \
+	__dpa_thread_window_writeback(); \
+	flexio_dev_qp_sq_ring_db(dtctx, ++tx_sq_ctx->sq_pi, tx_sq_number); \
+	flexio_dev_dbr_rq_inc_pi(rq_ctx->rq_dbr); \
+	com_step_cq(rq_cq_ctx); \
+	\
+	return data_sz; \
+}
+
 PP_DEFINE_QUEUE_WORKLOAD_HOST(pp_queue_host, pp_workload_l2_reflector)
 PP_DEFINE_QUEUE_WORKLOAD_HOST(pp_queue_checksum16_host, pp_workload_checksum16)
 PP_DEFINE_QUEUE_WORKLOAD_HOST(pp_queue_checksum_nrnd_host, pp_workload_checksum_nrnd)
+PP_DEFINE_QUEUE_WORKLOAD_HOST_CTX(pp_queue_nof_host, pp_workload_nof)
 
+#undef PP_DEFINE_QUEUE_WORKLOAD_HOST_CTX
 #undef PP_DEFINE_QUEUE_WORKLOAD_HOST
 
 flexio_dev_rpc_handler_t thd_ctx_init;
