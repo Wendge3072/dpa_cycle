@@ -31,64 +31,27 @@
  * both host and device sides samples.
  */
 
-#ifndef __FLEXIO_PP_COM_H__
-#define __FLEXIO_PP_COM_H__
+#ifndef __FLEXIO_PACKET_PROCESSOR_COM_H__
+#define __FLEXIO_PACKET_PROCESSOR_COM_H__
+
+#define MAX_SCHEDULER_QUEUES 2
+#define MAX_SCHEDULER 1
+#define DPA_FREQ_HZ 1800000000ULL  // 1.8GHz
 
 #include <stdint.h>
 
-/* Scheduler configurations */
-#define MAX_THREADS_PER_SCHEDULER 8
-#define MAX_TENANT_NUM 2
-#define MAX_SCHEDULER_QUEUES (MAX_THREADS_PER_SCHEDULER * MAX_TENANT_NUM)
-#if MAX_SCHEDULER_QUEUES != 16
-#error "MAX_SCHEDULER_QUEUES must be 16 (8 threads per scheduler x 2 tenants)."
-#endif
-#define DPA_FREQ_HZ 1800000000ULL  // 1.8GHz
+/* Depth of CQ is (1 << LOG_CQ_DEPTH) */
+#define LOG_CQ_DEPTH 7
+/* Depth of RQ is (1 << LOG_RQ_DEPTH) */
+#define LOG_RQ_DEPTH 7
+/* Depth of SQ is (1 << LOG_SQ_DEPTH) */
+#define LOG_SQ_DEPTH 7
 
-/* Every usage of this value is in bytes */
-#define MATCH_VAL_BSIZE 64
-
-/* Convert logarithm to value */
-#define L2V(l) (1UL << (l))
-/* Number of entries in each RQ/SQ/CQ is 2^LOG_Q_DEPTH. */
-#define LOG_Q_DEPTH 7
-#define Q_DEPTH L2V(LOG_Q_DEPTH)
-
-/* Mask for CQ index */
-#define CQ_IDX_MASK ((1 << LOG_Q_DEPTH) - 1)
-/* Mask for RQ index */
-#define RQ_IDX_MASK ((1 << LOG_Q_DEPTH) - 1)
-/* Mask for SQ index */
-#define SQ_IDX_MASK ((1 << (LOG_Q_DEPTH + LOG_SQE_NUM_SEGS)) - 1)
-/* Mask for data index */
-#define DATA_IDX_MASK ((1 << (LOG_Q_DEPTH)) - 1)
-
-/* SQ/RQ data entry byte size is 2048B (enough for ethernet packet data). */
-#define LOG_Q_DATA_ENTRY_BSIZE 11
-/* SQ/RQ data entry byte size log to value. */
-#define Q_DATA_ENTRY_BSIZE L2V(LOG_Q_DATA_ENTRY_BSIZE)
-/* SQ/RQ DATA byte size is queue depth times entry byte size. */
-#define Q_DATA_BSIZE (Q_DEPTH * Q_DATA_ENTRY_BSIZE)
-
-/* SQ WQE byte size is 64B. */
-#define LOG_SQ_WQE_BSIZE 6
-/* SQ WQE byte size log to value. */
-#define SQ_WQE_BSIZE L2V(LOG_SQ_WQE_BSIZE)
-/* SQ ring byte size is queue depth times WQE byte size. */
-#define SQ_RING_BSIZE (Q_DEPTH * SQ_WQE_BSIZE)
-
-/* CQE size is 64B */
-#define CQE_BSIZE 64
-#define CQ_BSIZE (Q_DEPTH * CQE_BSIZE)
-
-/* RQ WQE byte size is 64B. */
-#define LOG_RQ_WQE_BSIZE 4
-/* RQ WQE byte size log to value. */
-#define RQ_WQE_BSIZE L2V(LOG_RQ_WQE_BSIZE)
-/* RQ ring byte size is queue depth times WQE byte size. */
-#define RQ_RING_BSIZE (Q_DEPTH * RQ_WQE_BSIZE)
+/* Size of WQD is (1 << LOG_WQD_CHUNK_BSIZE) */
+#define LOG_WQD_CHUNK_BSIZE 13
 
 #define SPEED_RESULT_SIZE 8
+
 #define ETH_HEADER_SIZE 42
 #define NVME_QUEUE_ENTRY_SIZE (1024)
 #define NVME_QUEUE_ENTRY_NUM (128)
@@ -121,7 +84,7 @@ struct app_transfer_wq {
 } __attribute__((__packed__, aligned(8)));
 
 /* Collateral structure for transfer host data to device */
-struct host2dev_packet_processor_data_thd {
+struct host2dev_packet_processor_data1 {
 	/* RQ's CQ transfer information. */
 	struct app_transfer_cq rq_cq_transf;
 	/* RQ transfer information. */
@@ -155,7 +118,7 @@ struct host2dev_queue {
 	struct app_transfer_wq sq_transf;
 };
 
-struct host2dev_packet_processor_data_sch {
+struct host2dev_packet_processor_data2 {
 	struct host2dev_queue queues[MAX_SCHEDULER_QUEUES];
 	// flexio_uintptr_t dpa_thread_running_bm_daddr;
 	uint8_t not_first_run;
@@ -168,8 +131,8 @@ struct host2dev_packet_processor_data_sch {
 	uint64_t dpa_result_buffer;
 	size_t num_queues;
 	size_t scheduler_num;
-	size_t threads_num_per_scheduler;
-	size_t tenants_num;
+	size_t tenant_num_per_scheduler;
+	size_t threads_num;
 } __attribute__((__packed__, aligned(8)));
 
 
@@ -179,4 +142,5 @@ struct host_to_device_config {
 	uint64_t haddr;         /* Host address for the buffer */
 } __attribute__((__packed__, aligned(8)));
 
-#endif /* __FLEXIO_PP_COM_H__ */
+#endif /* __FLEXIO_PACKET_PROCESSOR_COM_H__ */
+

@@ -1,3 +1,33 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 /* Header file with utilities for DPA.
  */
 
@@ -23,11 +53,6 @@
 #define L2M(l) (L2V(l) - 1)
 
 #define CQE_OPCODE_REQUESTER 0x0
-
-#define DPA_FREQ_HZ 1800000000ULL  // 1.8GHz
-
-static uint64_t zero_mac = 0x400432c288a0;
-static uint64_t mask = 0x0000ffffffffffff;
 
 /* Sample DPA CQ metadata structure.
  * Contains all data needed to DPA to work with CQ.
@@ -147,33 +172,16 @@ void *get_next_sqe(sq_ctx_t *sq_ctx, uint32_t sq_idx_mask);
  */
 void com_step_eq(struct flexio_dev_thread_ctx *dtctx, eq_ctx_t *eq_ctx, uint32_t eq_idx_mask);
 
+/* Swap source and destination MAC in the packet.
+ *  packet - pointer to the packet.
+ */
+void swap_macs(char *packet);
+
 /* Poll CQ
  *  Return: 0 on success and -1 if it fails.
  *  cq_ctx - the pointer to the cq_ctx_t structure to poll.
  *  consumed_cqes - the number of consumed CQEs.
  */
 uint8_t com_cq_poll(cq_ctx_t *cq_ctx, uint32_t *consumed_cqes);
-
-/* Swap source and destination MAC in the packet.
- *  packet - pointer to the packet.
- */
-void swap_macs(char *packet);
-
-void swap_mac(char* packet);
-
-void get_swap_mac(char* packet);
-
-void save_set_dstmac(char* packet, uint16_t mac_index);
-
-void dpa_delay_ns(uint64_t nsec);
-
-void dpa_delay_cycles(uint64_t cycles);
-
-uint16_t calculate_checksum(uint16_t *data, int length);
-
-typedef uint32_t uint_test;
-
-inline uint_test calculate_checksum_nrnd(uint_test *data, int length, int round);
-
 
 #endif

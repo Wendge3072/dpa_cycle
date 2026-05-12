@@ -31,4 +31,4 @@
 # The meson file for build common libraries
 
 subdir('dev')
-# subdir('host')
+subdir('host')

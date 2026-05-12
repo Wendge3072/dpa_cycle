@@ -28,13 +28,20 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-# The meson file for build packet processor host side sample
+# The meson file for create common library for host side samples
 
-# Build sample as executable application
-executable('flexio_packet_processor',
-	['flexio_packet_processor_host.c'],
-	c_args: '-DDEV_APP_NAME='+dev_app_name,
-	native: true,
-	dependencies: [ibverbs_dep, mlx5_dep, flexio_dep, common_host_dep, sample_device_dep],
-	link_depends: sample_dev_target
-)
+common_host_sources = [
+	'com_host.c',
+]
+
+common_host_inc = '.'
+
+# Common host library created by command library
+common_host_library = library('common_host',
+			      common_host_sources,
+			      native: true,
+			      include_directories: [common_host_inc],
+			      dependencies : [ibverbs_dep, mlx5_dep, flexio_dep])
+
+common_host_dep = declare_dependency(include_directories: common_host_inc,
+				     link_with: common_host_library)

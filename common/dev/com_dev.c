@@ -1,3 +1,36 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/* Source file with utilities for DPA.
+ */
+
 #include "com_dev.h"
 #include <libflexio-dev/flexio_dev_queue_access.h>
 #include <stddef.h>
@@ -23,36 +56,6 @@ void swap_macs(char *packet)
 	smac = packet + 6;
 	for (i = 0; i < 6; i++, dmac++, smac++)
 		SWAP(*smac, *dmac);
-}
-
-void swap_mac(char* packet)
-{
-	uint64_t src_mac = *((uint64_t *)packet);
-	uint64_t dst_mac = *((uint64_t *)(packet + 6));
-	*((uint64_t *)packet) = dst_mac;
-	*((uint64_t *)(packet + 6)) = (src_mac & mask) | (dst_mac & ~mask);
-	// memset(packet + 12, 0, 30);
-}
-
-void get_swap_mac(char* packet)
-{
-	uint64_t dstmac_ori = *((uint64_t *)(packet + 64));
-	uint64_t srcmac_ori = *((uint64_t *)(packet + 6));
-	// uint64_t dstmac_now = *((uint64_t *)(packet));
-	*((uint64_t *)packet) = srcmac_ori;
-	*((uint64_t *)(packet + 6)) = (dstmac_ori & mask) | (srcmac_ori & ~mask);
-}
-
-/*
-	dst mac: 0xa088c2320440
-	big end: 0xXX 0xXX 0x40 0x04 0x32 0xc2 0x88 0xa0
-*/ 
-void save_set_dstmac(char* packet, uint16_t mac_index)
-{
-	register uint64_t dst_mac = *((uint64_t *)packet);
-	*((uint64_t *)(packet + 64)) = dst_mac;
-	dst_mac = (dst_mac & mask) | (zero_mac + ((uint64_t)mac_index << 40));
-	*((uint64_t *)packet) = dst_mac;
 }
 
 /* Fill the cq_ctx_t structure with input parameters
@@ -204,48 +207,3 @@ uint8_t com_cq_poll(cq_ctx_t *cq_ctx, uint32_t *consumed_cqes)
 	return 0;
 }
 
-// ----==== DPA Workloads ====----
-
-void dpa_delay_ns(uint64_t nsec) {
-    uint64_t start = __dpa_thread_cycles();
-    uint64_t wait_cycles = DPA_FREQ_HZ * nsec / 1000000000ULL;
-
-    while ((__dpa_thread_cycles() - start) < wait_cycles) {
-        // busy wait
-    }
-}
-
-void dpa_delay_cycles(uint64_t cycles) {
-    uint64_t start = __dpa_thread_cycles();
-
-    while ((__dpa_thread_cycles() - start) < cycles) {
-        // busy wait
-    }
-}
-
-__attribute__((optimize("O0")))
-uint16_t calculate_checksum(uint16_t *data, int length) {
-    uint32_t sum = 0;
-    int i;
-
-    for (i = 0; i < length; i++) {
-        sum += data[i];
-    }
-
-    return ~sum;
-}
-
-
-__attribute__((optimize("O0")))
-uint_test calculate_checksum_nrnd(uint_test *data, int length, int round) {
-	uint_test sum = 0;
-    int i;
-
-	while(round--){
-		for (i = 0; i < length; i++) {
-			sum += data[i];
-		}
-	}
-
-    return ~sum;
-}
