@@ -115,20 +115,30 @@ struct thread_context {
 
 	void* result_buffer;
 	void* host_buffer;
-	
+	void* dpu_queue_buffer;
+	uint32_t dpu_queue_buffer_mkey_id;
+
 	int thd_id;
 	struct flexio_queues *queues;
 	uint32_t num_queues;
 };
+
+#define DEFAULT_DMAC 0xa088c2320440ULL
+#define BUFFER_LOCATION_DPA_HEAP 0
+#define BUFFER_LOCATION_DPU_MEM 1
+#define MR_BASE_ALIGNMENT 64
+#define MAX_DPA_WORKERS 190
+#define MAX_DPA_SCHEDULERS 32
 
 size_t scheduler_num = 16;
 size_t tenant_per_scheduler = 2;
 
 size_t threads_num = 1;
 size_t begin_thread = 16;
-uint64_t DMAC = 0xa088c2320440;
+size_t begin_scheduler = 0;
+uint64_t DMAC = DEFAULT_DMAC;
 size_t buffer_location = 0;
-size_t use_copy = 1;
+size_t use_copy = 0;
 
 /* Open ibv device
  * Returns 0 on success and -1 if the destroy was failed.
@@ -221,6 +231,73 @@ static struct flexio_mkey *create_dpa_mkey(struct app_context *app_ctx, flexio_u
 	return mkey;
 }
 
+static size_t align_mr_size(size_t size)
+{
+	return (size + (MR_BASE_ALIGNMENT - 1)) & ~(MR_BASE_ALIGNMENT - 1);
+}
+
+static int sq_uses_rq_data(const struct thread_context *thd_ctx, size_t copy_mode)
+{
+	return thd_ctx->num_queues > 1 || copy_mode == 0;
+}
+
+static size_t dpu_queue_data_bsize(const struct thread_context *thd_ctx, size_t copy_mode)
+{
+	if (buffer_location == BUFFER_LOCATION_DPA_HEAP)
+		return 0;
+
+	return thd_ctx->num_queues * Q_DATA_BSIZE *
+	       (sq_uses_rq_data(thd_ctx, copy_mode) ? 1 : 2);
+}
+
+static void *dpu_rq_data_addr(struct thread_context *thd_ctx, uint32_t index)
+{
+	return (char *)thd_ctx->dpu_queue_buffer + index * Q_DATA_BSIZE;
+}
+
+static void *dpu_sq_data_addr(struct thread_context *thd_ctx, uint32_t index, size_t copy_mode)
+{
+	if (sq_uses_rq_data(thd_ctx, copy_mode))
+		return dpu_rq_data_addr(thd_ctx, index);
+
+	return (char *)thd_ctx->dpu_queue_buffer +
+	       (thd_ctx->num_queues + index) * Q_DATA_BSIZE;
+}
+
+static int alloc_context_registered_memory(struct app_context *app_ctx, struct thread_context *thd_ctx,
+				     size_t extra_host_buffer_bsize, size_t copy_mode)
+{
+	void *tmp_ptr = NULL;
+	size_t queue_data_bsize = dpu_queue_data_bsize(thd_ctx, copy_mode);
+	size_t needed_buffer_size = queue_data_bsize + SPEED_RESULT_SIZE + extra_host_buffer_bsize;
+	size_t mmap_size = align_mr_size(needed_buffer_size);
+
+	tmp_ptr = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
+	if (tmp_ptr == MAP_FAILED) {
+		printf("Failed to allocate DPU buffer\n");
+		return -1;
+	}
+	memset(tmp_ptr, 0, mmap_size);
+
+	thd_ctx->mr = ibv_reg_mr(app_ctx->process_pd, tmp_ptr, mmap_size,
+				 IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
+				 IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC);
+	if (thd_ctx->mr == NULL) {
+		printf("Failed to register MR\n");
+		return -1;
+	}
+
+	thd_ctx->dpu_queue_buffer = queue_data_bsize ? tmp_ptr : NULL;
+	thd_ctx->dpu_queue_buffer_mkey_id = thd_ctx->mr->lkey;
+	thd_ctx->result_buffer_mkey_id = thd_ctx->mr->lkey;
+	thd_ctx->result_buffer = (char *)tmp_ptr + queue_data_bsize;
+	thd_ctx->host_buffer = extra_host_buffer_bsize ?
+			       (char *)thd_ctx->result_buffer + SPEED_RESULT_SIZE : NULL;
+
+	return 0;
+}
+
 /* CQE size is 64B */
 #define CQE_BSIZE 64
 #define CQ_BSIZE (Q_DEPTH * CQE_BSIZE)
@@ -286,26 +363,30 @@ static int cq_mem_alloc(struct flexio_process *process, struct app_transfer_cq *
 static int sq_mem_alloc(struct app_context* app_ctx, struct thread_context* thd_ctx, struct flexio_process *process, 
 	struct app_transfer_wq *sq_transf, int index, size_t zero_copy)
 {
-	if (zero_copy == 1) {
-		// tmp trick code
-		sq_transf->wqd_daddr = thd_ctx->queues[index].rq_transf.wqd_daddr;
-		thd_ctx->queues[index].sqd_mkey = thd_ctx->queues[index].rqd_mkey;
-		sq_transf->wqd_mkey_id = thd_ctx->queues[index].rq_transf.wqd_mkey_id;
-	}
-	else {
-		/* Allocate DPA heap memory for SQ data. */
-		flexio_buf_dev_alloc(process, Q_DATA_BSIZE, &sq_transf->wqd_daddr);
-		if (!sq_transf->wqd_daddr) {
-			return -1;
+	if (buffer_location == BUFFER_LOCATION_DPA_HEAP) {
+		if (zero_copy == 1) {
+			sq_transf->wqd_daddr = thd_ctx->queues[index].rq_transf.wqd_daddr;
+			thd_ctx->queues[index].sqd_mkey = thd_ctx->queues[index].rqd_mkey;
+			sq_transf->wqd_mkey_id = thd_ctx->queues[index].rq_transf.wqd_mkey_id;
 		}
-		/* Create an MKey for SQ data buffer to send. */
-		thd_ctx->queues[index].sqd_mkey = create_dpa_mkey(app_ctx, thd_ctx->queues[index].sq_transf.wqd_daddr);
-		if (!thd_ctx->queues[index].sqd_mkey) {
-			printf("Failed to create an MKey for SQ data buffer\n");
-			return -1;
+		else {
+			/* Allocate DPA heap memory for SQ data. */
+			flexio_buf_dev_alloc(process, Q_DATA_BSIZE, &sq_transf->wqd_daddr);
+			if (!sq_transf->wqd_daddr) {
+				return -1;
+			}
+			/* Create an MKey for SQ data buffer to send. */
+			thd_ctx->queues[index].sqd_mkey = create_dpa_mkey(app_ctx, thd_ctx->queues[index].sq_transf.wqd_daddr);
+			if (!thd_ctx->queues[index].sqd_mkey) {
+				printf("Failed to create an MKey for SQ data buffer\n");
+				return -1;
+			}
+			/* Set SQ's data buffer MKey ID in communication struct. */
+			sq_transf->wqd_mkey_id = flexio_mkey_get_id(thd_ctx->queues[index].sqd_mkey);
 		}
-		/* Set SQ's data buffer MKey ID in communication struct. */
-		sq_transf->wqd_mkey_id = flexio_mkey_get_id(thd_ctx->queues[index].sqd_mkey);
+	} else {
+		sq_transf->wqd_daddr = (flexio_uintptr_t)dpu_sq_data_addr(thd_ctx, index, use_copy);
+		sq_transf->wqd_mkey_id = thd_ctx->dpu_queue_buffer_mkey_id;
 	}
 	/* Allocate DPA heap memory for SQ ring. */
 	flexio_buf_dev_alloc(process, SQ_RING_BSIZE, &sq_transf->wq_ring_daddr);
@@ -332,21 +413,26 @@ static int rq_mem_alloc(struct app_context* app_ctx, struct thread_context* thd_
 	/* DBR source memory on the host (to copy). */
 	__be32 dbr[2] = { 0, 0 };
 
-	/* Allocate DPA heap memory for RQ data. */
-	flexio_buf_dev_alloc(process, Q_DATA_BSIZE, &rq_transf->wqd_daddr);
-	if (!rq_transf->wqd_daddr) {
-		return -1;
-	}
-	/* Create an MKey for RX buffer */
-	thd_ctx->queues[index].rqd_mkey = create_dpa_mkey(app_ctx, thd_ctx->queues[index].rq_transf.wqd_daddr);
-	if (!thd_ctx->queues[index].rqd_mkey) {
-		printf("Failed to create an MKey for RQ data buffer.\n");
-		return -1;
-	}
-	thd_ctx->queues[index].rq_transf.wqd_mkey_id = flexio_mkey_get_id(thd_ctx->queues[index].rqd_mkey);
-	if (!thd_ctx->queues[index].rq_transf.wqd_mkey_id) {
-		printf("Failed to get mkey id for RQ data buffer.\n");
-		return -1;
+	if (buffer_location == BUFFER_LOCATION_DPA_HEAP) {
+		/* Allocate DPA heap memory for RQ data. */
+		flexio_buf_dev_alloc(process, Q_DATA_BSIZE, &rq_transf->wqd_daddr);
+		if (!rq_transf->wqd_daddr) {
+			return -1;
+		}
+		/* Create an MKey for RX buffer */
+		thd_ctx->queues[index].rqd_mkey = create_dpa_mkey(app_ctx, thd_ctx->queues[index].rq_transf.wqd_daddr);
+		if (!thd_ctx->queues[index].rqd_mkey) {
+			printf("Failed to create an MKey for RQ data buffer.\n");
+			return -1;
+		}
+		thd_ctx->queues[index].rq_transf.wqd_mkey_id = flexio_mkey_get_id(thd_ctx->queues[index].rqd_mkey);
+		if (!thd_ctx->queues[index].rq_transf.wqd_mkey_id) {
+			printf("Failed to get mkey id for RQ data buffer.\n");
+			return -1;
+		}
+	} else {
+		rq_transf->wqd_daddr = (flexio_uintptr_t)dpu_rq_data_addr(thd_ctx, index);
+		rq_transf->wqd_mkey_id = thd_ctx->dpu_queue_buffer_mkey_id;
 	}
 	/* Allocate DPA heap memory for RQ ring. */
 	flexio_buf_dev_alloc(process, RQ_RING_BSIZE, &rq_transf->wq_ring_daddr);
@@ -793,11 +879,12 @@ static int clean_up_app_rq(struct app_context* app_ctx, struct thread_context *t
 			err = -1;
 		}
 
-		if (thd_ctx->queues[i].rq_transf.wqd_daddr &&
-			flexio_buf_dev_free(app_ctx->flexio_process, thd_ctx->queues[i].rq_transf.wqd_daddr)) {
-			printf("Failed to free rq_transf.wqd_daddr\n");
-			err = -1;
-		}
+			if (buffer_location == BUFFER_LOCATION_DPA_HEAP &&
+				thd_ctx->queues[i].rq_transf.wqd_daddr &&
+				flexio_buf_dev_free(app_ctx->flexio_process, thd_ctx->queues[i].rq_transf.wqd_daddr)) {
+				printf("Failed to free rq_transf.wqd_daddr\n");
+				err = -1;
+			}
 
 		if (thd_ctx->queues[i].flexio_rq_cq_ptr && flexio_cq_destroy(thd_ctx->queues[i].flexio_rq_cq_ptr)) {
 			printf("Failed to destroy RQ' CQ\n");
@@ -834,10 +921,12 @@ static int clean_up_app_sq(struct app_context* app_ctx, struct thread_context *t
 			err = -1;
 		}
 
-		if (thd_ctx->queues[i].sqd_mkey && flexio_device_mkey_destroy(thd_ctx->queues[i].sqd_mkey)) {
-			printf("Failed to destroy mkey SQD\n");
-			err = -1;
-		}
+			if (thd_ctx->queues[i].sqd_mkey &&
+				thd_ctx->queues[i].sqd_mkey != thd_ctx->queues[i].rqd_mkey &&
+				flexio_device_mkey_destroy(thd_ctx->queues[i].sqd_mkey)) {
+				printf("Failed to destroy mkey SQD\n");
+				err = -1;
+			}
 
 		if (thd_ctx->queues[i].sq_transf.wq_ring_daddr &&
 			flexio_buf_dev_free(app_ctx->flexio_process, thd_ctx->queues[i].sq_transf.wq_ring_daddr)) {
@@ -845,10 +934,12 @@ static int clean_up_app_sq(struct app_context* app_ctx, struct thread_context *t
 			err = -1;
 		}
 
-		if (thd_ctx->queues[i].sq_transf.wqd_daddr &&
-			flexio_buf_dev_free(app_ctx->flexio_process, thd_ctx->queues[i].sq_transf.wqd_daddr)) {
-			printf("Failed to free sq_transf.wqd_daddr\n");
-			err = -1;
+			if (buffer_location == BUFFER_LOCATION_DPA_HEAP &&
+				thd_ctx->queues[i].sq_transf.wqd_daddr &&
+				thd_ctx->queues[i].sq_transf.wqd_daddr != thd_ctx->queues[i].rq_transf.wqd_daddr &&
+				flexio_buf_dev_free(app_ctx->flexio_process, thd_ctx->queues[i].sq_transf.wqd_daddr)) {
+				printf("Failed to free sq_transf.wqd_daddr\n");
+				err = -1;
 		}
 
 		if (thd_ctx->queues[i].flexio_sq_cq_ptr && flexio_cq_destroy(thd_ctx->queues[i].flexio_sq_cq_ptr)) {
@@ -875,40 +966,65 @@ static int clean_up_app_sq(struct app_context* app_ctx, struct thread_context *t
 
 #define MSG_HOST_BUFF_BSIZE (512 * L2V(FLEXIO_MSG_DEV_LOG_DATA_CHUNK_BSIZE))
 
-#define MR_BASE_ALIGNMENT 64				/* Memory alignment required for window buffers */
-
 // #define nic_mode 1
+static int parse_size_arg(const char *text, size_t *value)
+{
+	char *end = NULL;
+	unsigned long long parsed = strtoull(text, &end, 0);
+
+	if (text[0] == '\0' || *end != '\0')
+		return -1;
+
+	*value = (size_t)parsed;
+	return 0;
+}
+
+static void print_usage(const char *prog)
+{
+	printf("Usage: %s <mlx5 device> <sch_num> <tenant_num> <worker_num> "
+	       "<sch_start_eu> <worker_start_eu> <buffer_location>\n", prog);
+	printf("  buffer_location: 0 = DPA heap, 1 = DPU memory\n");
+	printf("  tenant_num: currently only 2 is supported\n");
+}
+
 /* Main host side function.
  * Responsible for allocating resources and making preparations for DPA side envocatin.
  */
 int main(int argc, char **argv)
 {
-    if (argc > 2) {
-        threads_num = atoi(argv[2]);
-    }
-
-	if (argc > 3) {
-        begin_thread = atoi(argv[3]);
-		if (begin_thread < 16) {
-			printf("Invalid begin_thread value. It must be at least 16.\n");
-			return -1;
-		}
-    }
-
-	if (argc > 4) {
-        DMAC = strtoull(argv[4], NULL, 16);
-    }
-
-	if (argc > 5) {
-		buffer_location = atoi(argv[5]);
+	if (argc != 8) {
+		print_usage(argv[0]);
+		return -1;
 	}
 
-	if (argc > 6) {
-		use_copy = atoi(argv[6]);
+	if (parse_size_arg(argv[2], &scheduler_num) ||
+	    parse_size_arg(argv[3], &tenant_per_scheduler) ||
+	    parse_size_arg(argv[4], &threads_num) ||
+	    parse_size_arg(argv[5], &begin_scheduler) ||
+	    parse_size_arg(argv[6], &begin_thread) ||
+	    parse_size_arg(argv[7], &buffer_location)) {
+		print_usage(argv[0]);
+		return -1;
 	}
 
-	if (argc > 7) {
-		scheduler_num = atoi(argv[7]);
+	if (tenant_per_scheduler != 2 || tenant_per_scheduler > MAX_SCHEDULER_QUEUES) {
+		printf("tenant_num=%zu is not implemented yet; use tenant_num=2.\n",
+		       tenant_per_scheduler);
+		return -1;
+	}
+	if (buffer_location != BUFFER_LOCATION_DPA_HEAP && buffer_location != BUFFER_LOCATION_DPU_MEM) {
+		printf("Invalid buffer_location=%zu; use 0 for DPA heap or 1 for DPU memory.\n",
+		       buffer_location);
+		return -1;
+	}
+	if (scheduler_num == 0 || threads_num == 0) {
+		printf("sch_num and worker_num must be greater than 0.\n");
+		return -1;
+	}
+	if (scheduler_num > MAX_DPA_SCHEDULERS || threads_num > MAX_DPA_WORKERS) {
+		printf("sch_num must be <= %d and worker_num must be <= %d.\n",
+		       MAX_DPA_SCHEDULERS, MAX_DPA_WORKERS);
+		return -1;
 	}
 
 	char buf[2];
@@ -935,26 +1051,26 @@ int main(int argc, char **argv)
 	// uint32_t rqd_daddr_mkey_id = 0;
 	// uint32_t sqd_daddr_mkey_id = 0;
 
-	thd_ctx = malloc(sizeof(struct thread_context) * threads_num);
+	thd_ctx = calloc(threads_num, sizeof(struct thread_context));
 	if (thd_ctx == NULL) {
 		printf("malloc thread context failed\n");
 		return -1;
 	}
 	for (int i = 0; i < threads_num; i++) {
-		thd_ctx[i].queues = malloc(sizeof(struct flexio_queues));
+		thd_ctx[i].queues = calloc(1, sizeof(struct flexio_queues));
 		if (thd_ctx[i].queues == NULL) {
 			printf("malloc queue context failed\n");
 			return -1;
 		}
 		thd_ctx[i].num_queues = 1;
 	}
-	sch_ctx = malloc(sizeof(struct thread_context) * scheduler_num);
+	sch_ctx = calloc(scheduler_num, sizeof(struct thread_context));
 	if (sch_ctx == NULL) {
 		printf("malloc scheduler context failed\n");
 		return -1;
 	}
 	for (int i = 0; i < scheduler_num; i++) {
-		sch_ctx[i].queues = malloc(sizeof(struct flexio_queues) * tenant_per_scheduler);
+		sch_ctx[i].queues = calloc(tenant_per_scheduler, sizeof(struct flexio_queues));
 		if (sch_ctx[i].queues == NULL) {
 			printf("malloc scheduler queue context failed\n");
 			return -1;
@@ -1092,31 +1208,18 @@ int main(int argc, char **argv)
 		int match_value_size;
 		handler_attr.host_stub_func = flexio_scheduler_handle;
 		handler_attr.affinity.type = FLEXIO_AFFINITY_STRICT;
-		handler_attr.affinity.id = i;
+		handler_attr.affinity.id = begin_scheduler + i;
 
 		ret = flexio_event_handler_create(app_ctx.flexio_process, &handler_attr, &(sch_ctx[i].event_handler));
 		if (ret != FLEXIO_STATUS_SUCCESS) {
 			printf("Fail tp create event handler.\n");
 			goto cleanup;
 		}
-		void* tmp_ptr = NULL;
-		size_t needed_buffer_size = SPEED_RESULT_SIZE;
-		size_t mmap_size = needed_buffer_size + (64 - 1);
-		mmap_size -= mmap_size % 64;
-		tmp_ptr = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
-		if (tmp_ptr == NULL) {
-			printf("Failed to allocate host buffer\n");
-			return -1;
-		}
-		memset(tmp_ptr, 0, mmap_size);
-		sch_ctx[i].mr = ibv_reg_mr(app_ctx.process_pd, tmp_ptr, mmap_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC);
-		if (sch_ctx[i].mr == NULL) {
-			printf("Failed to register MR\n");
-			return -1;
-		}
-		sch_ctx[i].result_buffer_mkey_id = sch_ctx[i].mr->lkey;
-		sch_ctx[i].result_buffer = (char*)tmp_ptr;
 		sch_ctx[i].thd_id = i;
+		if (alloc_context_registered_memory(&app_ctx, &sch_ctx[i], 0, use_copy)) {
+			err = -1;
+			goto cleanup;
+		}
 		if (create_app_rq(&(app_ctx), &(sch_ctx[i]))) {
 			printf("Failed to create Flex EQ.\n");
 			err = -1;
@@ -1228,25 +1331,11 @@ int main(int argc, char **argv)
 			printf("Fail tp create event handler.\n");
 			goto cleanup;
 		}
-		void* tmp_ptr = NULL;
-		size_t needed_buffer_size = SPEED_RESULT_SIZE + NVME_QUEUE_MEMORY_SIZE;
-		// size_t needed_buffer_size = SPEED_RESULT_SIZE;
-		size_t mmap_size = needed_buffer_size + (64 - 1);
-		mmap_size -= mmap_size % 64;
-		tmp_ptr = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
-		if (tmp_ptr == NULL) {
-			printf("Failed to allocate host buffer\n");
-			return -1;
+		if (alloc_context_registered_memory(&app_ctx, &thd_ctx[i],
+					      NVME_QUEUE_MEMORY_SIZE, use_copy)) {
+			err = -1;
+			goto cleanup;
 		}
-		memset(tmp_ptr, 0, mmap_size);
-		thd_ctx[i].mr = ibv_reg_mr(app_ctx.process_pd, tmp_ptr, mmap_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC);
-		if (thd_ctx[i].mr == NULL) {
-			printf("Failed to register MR\n");
-			return -1;
-		}
-		thd_ctx[i].result_buffer_mkey_id = thd_ctx[i].mr->lkey;
-		thd_ctx[i].result_buffer = (char*)tmp_ptr;
-		thd_ctx[i].host_buffer = (char*)tmp_ptr + SPEED_RESULT_SIZE;
 		
 		if (create_app_rq(&(app_ctx), &(thd_ctx[i]))) {
 			printf("Failed to create Flex EQ.\n");
