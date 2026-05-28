@@ -88,6 +88,40 @@ static uint32_t weights[MAX_SCHEDULER_QUEUES] = {25, 25};
 static uint64_t zero_mac = 0x400432c288a0;
 static uint64_t mac_prefix_mask = 0xffff000000000000;
 
+static inline int pp_queue_acquire_host_buffer(struct flexio_dev_thread_ctx *dtctx,
+	struct flexio_dpa_dev_queue *queue, uint32_t window_id)
+{
+	flexio_dev_status_t ret;
+
+	ret = flexio_dev_window_config(dtctx, (uint16_t)window_id, queue->rq_lkey);
+	if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+		flexio_dev_print("failed to config host rq window\n");
+		return -1;
+	}
+	ret = flexio_dev_window_ptr_acquire(dtctx, (uint64_t)queue->rq_ctx.rqd_host_addr,
+					    &(queue->rq_ctx.rqd_dpa_addr));
+	if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+		flexio_dev_print("failed to acquire host rq buffer\n");
+		return -1;
+	}
+
+	if (queue->sq_lkey != queue->rq_lkey) {
+		ret = flexio_dev_window_config(dtctx, (uint16_t)window_id, queue->sq_lkey);
+		if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+			flexio_dev_print("failed to config host sq window\n");
+			return -1;
+		}
+	}
+	ret = flexio_dev_window_ptr_acquire(dtctx, (uint64_t)queue->sq_ctx.sqd_host_addr,
+					    &(queue->sq_ctx.sqd_dpa_addr));
+	if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+		flexio_dev_print("failed to acquire host sq buffer\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 static inline uint32_t get_tenant_workload(uint32_t tenant_id)
 {
 	if (tenant_id == 0)
