@@ -11,6 +11,7 @@ static void thd_ctx_init(struct flexio_dev_thread_ctx *dtctx, struct host2dev_pa
 	thd_ctx[i].rq_lkey = data_from_host->rq_transf.wqd_mkey_id;
 	thd_ctx[i].window_id = data_from_host->window_id;
 	thd_ctx[i].idx = i;
+	thd_ctx[i].buffer_location = data_from_host->buffer_location;
 
 	/* Set context for RQ's CQ */
 	com_cq_ctx_init(&(thd_ctx[i].rq_cq_ctx),
@@ -57,9 +58,34 @@ static void thd_ctx_init(struct flexio_dev_thread_ctx *dtctx, struct host2dev_pa
         swqe = get_next_sqe(&(thd_ctx[i].sq_ctx), SQ_IDX_MASK);
 	}
     thd_ctx[i].sq_ctx.sq_wqe_seg_idx = 0;
-	thd_ctx[i].rq_ctx.rqd_dpa_addr = data_from_host->rq_transf.wqd_daddr;
-	thd_ctx[i].sq_ctx.sqd_dpa_addr = data_from_host->sq_transf.wqd_daddr;
 	flexio_dev_status_t ret;
+	if (data_from_host->buffer_location) {
+		thd_ctx[i].rq_ctx.rqd_host_addr = data_from_host->rq_transf.wqd_daddr;
+		thd_ctx[i].sq_ctx.sqd_host_addr = data_from_host->sq_transf.wqd_daddr;
+		ret = flexio_dev_window_config(dtctx, (uint16_t)thd_ctx[i].window_id, thd_ctx[i].rq_lkey);
+		if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+			flexio_dev_print("failed to config host rq window, thread %d\n", i);
+		}
+		ret = flexio_dev_window_ptr_acquire(dtctx, (uint64_t)thd_ctx[i].rq_ctx.rqd_host_addr,
+						    &(thd_ctx[i].rq_ctx.rqd_dpa_addr));
+		if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+			flexio_dev_print("failed to acquire host rq buffer, thread %d\n", i);
+		}
+		if (thd_ctx[i].sq_lkey != thd_ctx[i].rq_lkey) {
+			ret = flexio_dev_window_config(dtctx, (uint16_t)thd_ctx[i].window_id, thd_ctx[i].sq_lkey);
+			if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+				flexio_dev_print("failed to config host sq window, thread %d\n", i);
+			}
+		}
+		ret = flexio_dev_window_ptr_acquire(dtctx, (uint64_t)thd_ctx[i].sq_ctx.sqd_host_addr,
+						    &(thd_ctx[i].sq_ctx.sqd_dpa_addr));
+		if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
+			flexio_dev_print("failed to acquire host sq buffer, thread %d\n", i);
+		}
+	} else {
+		thd_ctx[i].rq_ctx.rqd_dpa_addr = data_from_host->rq_transf.wqd_daddr;
+		thd_ctx[i].sq_ctx.sqd_dpa_addr = data_from_host->sq_transf.wqd_daddr;
+	}
 	ret = flexio_dev_window_config(dtctx, (uint16_t)thd_ctx[i].window_id, data_from_host->result_buffer_mkey_id);
 	if (ret != FLEXIO_DEV_STATUS_SUCCESS) {
 		flexio_dev_print("failed to config rq window, thread %d\n", i);
@@ -170,6 +196,7 @@ static void process_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_threa
 	uint32_t rq_wqe_idx;
 	/* Pointer to RQ data */
 	char *rq_data;
+	char *rq_data_host;
 
 	/* TX packet handling variables */
 	union flexio_dev_sqe_seg *swqe;
@@ -185,7 +212,12 @@ static void process_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_threa
 	rwqe = &(thd_ctx->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 
 	/* Extract data (whole packet) pointed to by the RQ WQE */
-	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+	rq_data_host = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+	rq_data = rq_data_host;
+	if (thd_ctx->buffer_location) {
+		rq_data = (char *)((flexio_uintptr_t)rq_data_host -
+			   thd_ctx->rq_ctx.rqd_host_addr + thd_ctx->rq_ctx.rqd_dpa_addr);
+	}
 
 	uint32_t tenant_id = get_packet_tenant_id(rq_data);
 	uint32_t workload = get_tenant_workload(tenant_id);
@@ -198,10 +230,13 @@ static void process_packet(struct flexio_dev_thread_ctx *dtctx, struct dpa_threa
 	
 	swqe = &(thd_ctx->sq_ctx.sq_ring[(thd_ctx->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	thd_ctx->sq_ctx.sq_wqe_seg_idx += 4;
-	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, thd_ctx->sq_lkey, (uint64_t)rq_data);
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, data_sz, thd_ctx->rq_lkey,
+					     thd_ctx->buffer_location ? (uint64_t)rq_data_host : (uint64_t)rq_data);
 
 	/* Ring DB */
 	__dpa_thread_memory_writeback();
+	if (thd_ctx->buffer_location)
+		__dpa_thread_window_writeback();
 	flexio_dev_qp_sq_ring_db(dtctx, ++thd_ctx->sq_ctx.sq_pi, thd_ctx->sq_ctx.sq_number);
 	flexio_dev_dbr_rq_inc_pi(thd_ctx->rq_ctx.rq_dbr);
 }

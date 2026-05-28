@@ -9,6 +9,7 @@ static void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx, struct host2dev_pa
 	sch_ctx[i].packets_count = 0;
 	sch_ctx[i].idx = i;
 	sch_ctx[i].window_id = data_from_host->window_id;
+	sch_ctx[i].buffer_location = data_from_host->buffer_location;
 	tenant_num_per_scheduler = data_from_host->tenant_num_per_scheduler;
 	scheduler_num = data_from_host->scheduler_num;
 	worker_threads_num = data_from_host->threads_num;
@@ -43,6 +44,22 @@ static void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx, struct host2dev_pa
 
 		/* Set context for data */
 		com_dt_ctx_init(&(sch_ctx[i].queues[j].dt_ctx), data_from_host->queues[j].sq_transf.wqd_daddr);
+		if (data_from_host->buffer_location) {
+			sch_ctx[i].queues[j].rq_ctx.rqd_host_addr =
+				data_from_host->queues[j].rq_transf.wqd_daddr;
+			sch_ctx[i].queues[j].sq_ctx.sqd_host_addr =
+				data_from_host->queues[j].sq_transf.wqd_daddr;
+			if (pp_queue_acquire_host_buffer(dtctx, &sch_ctx[i].queues[j],
+							 sch_ctx[i].window_id)) {
+				flexio_dev_print("failed to acquire scheduler host queue buffers, scheduler %d queue %d\n",
+						 i, j);
+			}
+		} else {
+			sch_ctx[i].queues[j].rq_ctx.rqd_dpa_addr =
+				data_from_host->queues[j].rq_transf.wqd_daddr;
+			sch_ctx[i].queues[j].sq_ctx.sqd_dpa_addr =
+				data_from_host->queues[j].sq_transf.wqd_daddr;
+		}
 	}
 
 
@@ -99,6 +116,7 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct flexio_dp
 	uint32_t rq_wqe_idx;
 	/* Pointer to RQ data */
 	char *rq_data;
+	char *rq_data_host;
 
 	/* TX packet handling variables */
 	union flexio_dev_sqe_seg *swqe;
@@ -111,7 +129,12 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct flexio_dp
 	rwqe = &(tenant->rq_ctx.rq_ring[rq_wqe_idx & RQ_IDX_MASK]);
 
 	/* Extract data (whole packet) pointed to by the RQ WQE */
-	rq_data = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+	rq_data_host = (void *)be64_to_cpu((volatile __be64)rwqe->addr);
+	rq_data = rq_data_host;
+	if (tenant->rq_ctx.rqd_host_addr) {
+		rq_data = (char *)((flexio_uintptr_t)rq_data_host -
+			   tenant->rq_ctx.rqd_host_addr + tenant->rq_ctx.rqd_dpa_addr);
+	}
 
 	uint32_t mac_index = tenant_num_per_scheduler * scheduler_num;
 	mac_index += worker_idx;
@@ -121,10 +144,13 @@ static void forward_packet(struct flexio_dev_thread_ctx *dtctx, struct flexio_dp
 
 	swqe = &(tenant->sq_ctx.sq_ring[(tenant->sq_ctx.sq_wqe_seg_idx + 2) & SQ_IDX_MASK]);
 	tenant->sq_ctx.sq_wqe_seg_idx += 4;
-	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, *data_sz, tenant->sq_lkey, (uint64_t)rq_data);
+	flexio_dev_swqe_seg_mem_ptr_data_set(swqe, *data_sz, tenant->rq_lkey,
+					     tenant->rq_ctx.rqd_host_addr ? (uint64_t)rq_data_host : (uint64_t)rq_data);
 
 	/* Ring DB */
 	__dpa_thread_memory_writeback();
+	if (tenant->rq_ctx.rqd_host_addr)
+		__dpa_thread_window_writeback();
 	flexio_dev_qp_sq_ring_db(dtctx, ++tenant->sq_ctx.sq_pi, tenant->sq_ctx.sq_number);
 	flexio_dev_dbr_rq_inc_pi(tenant->rq_ctx.rq_dbr);
 }
