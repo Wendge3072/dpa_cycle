@@ -101,7 +101,7 @@ static void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx, struct host2dev_pa
 static void save_set_dstmac(char* packet, uint32_t mac_index)
 {
 	uint64_t dst_mac = *((uint64_t *)packet);
-	*((uint64_t *)(packet + PACKET_METADATA_ORIG_DMAC_OFFSET)) = dst_mac;
+	save_packet_orig_dmac(packet);
 	dst_mac = (dst_mac & mac_prefix_mask) | (zero_mac + ((uint64_t)mac_index << 40));
 	*((uint64_t *)packet) = dst_mac;
 }

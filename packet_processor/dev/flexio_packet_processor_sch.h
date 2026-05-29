@@ -82,7 +82,8 @@ static uint32_t weights[MAX_SCHEDULER_QUEUES] = {25, 25};
 #define TENANT_0_WORKLOAD TENANT_WORKLOAD_DIRECT
 #define TENANT_1_WORKLOAD TENANT_WORKLOAD_DIRECT
 
-#define PACKET_METADATA_ORIG_DMAC_OFFSET 64
+#define PACKET_METADATA_ORIG_DMAC_OFFSET 58
+#define PACKET_METADATA_ORIG_DMAC_BSIZE 6
 #define DEFAULT_WORKER_FORWARD_STRIPE 8
 
 static uint64_t zero_mac = 0x400432c288a0;
@@ -133,7 +134,19 @@ static inline uint32_t get_tenant_workload(uint32_t tenant_id)
 
 static inline uint64_t get_packet_orig_dmac(char *packet)
 {
-	return *((uint64_t *)(packet + PACKET_METADATA_ORIG_DMAC_OFFSET));
+	uint64_t dmac = 0;
+
+	for (uint32_t i = 0; i < PACKET_METADATA_ORIG_DMAC_BSIZE; i++) {
+		dmac |= ((uint64_t)(uint8_t)packet[PACKET_METADATA_ORIG_DMAC_OFFSET + i]) << (i * 8);
+	}
+	return dmac;
+}
+
+static inline void save_packet_orig_dmac(char *packet)
+{
+	for (uint32_t i = 0; i < PACKET_METADATA_ORIG_DMAC_BSIZE; i++) {
+		packet[PACKET_METADATA_ORIG_DMAC_OFFSET + i] = packet[i];
+	}
 }
 
 static inline uint32_t get_packet_tenant_id(char *packet)
