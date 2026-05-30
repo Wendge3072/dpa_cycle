@@ -73,7 +73,7 @@ sch_check_budget(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 }
 
 static inline __attribute__((always_inline)) void
-sch_cycle_record_debt(size_t budget, size_t used, size_t *debt)
+sch_record_debt(size_t budget, size_t used, size_t *debt)
 {
 	size_t debt_now;
 	size_t debt_next;
@@ -91,7 +91,7 @@ sch_cycle_record_debt(size_t budget, size_t used, size_t *debt)
 }
 
 static inline __attribute__((always_inline)) void
-sch_cycle_apply_debt(size_t *budget, size_t *debt)
+sch_apply_debt(size_t *budget, size_t *debt)
 {
 	size_t budget_now;
 	size_t debt_now = *debt;
@@ -108,11 +108,13 @@ sch_cycle_apply_debt(size_t *budget, size_t *debt)
 }
 
 static inline void
-sch_apply_cycle_debt(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
+sch_apply_resource_debt(struct dpa_sche_context *sch_ctx, uint32_t tenants_num)
 {
 	for (uint32_t t = 0; t < tenants_num; t++) {
-		sch_cycle_apply_debt(&sch_ctx->tenant_cycle_budget[t],
-				     &sch_ctx->tenant_cycle_debt[t]);
+		sch_apply_debt(&sch_ctx->tenant_cycle_budget[t],
+			       &sch_ctx->tenant_cycle_debt[t]);
+		sch_apply_debt(&sch_ctx->tenant_bw_budget[t],
+			       &sch_ctx->tenant_bw_debt[t]);
 	}
 }
 
@@ -162,13 +164,16 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		register size_t cycle_used = 0;
 		register size_t bw_used = 0;
 		register size_t cycle_budget = sch_ctx->tenant_cycle_budget[t];
+		register size_t bw_budget = sch_ctx->tenant_bw_budget[t];
 
 		cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0,
 						__ATOMIC_RELAXED);
 		bw_used = __atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0,
 						__ATOMIC_RELAXED);
-		sch_cycle_record_debt(cycle_budget, cycle_used,
-				      &sch_ctx->tenant_cycle_debt[t]);
+		sch_record_debt(cycle_budget, cycle_used,
+				&sch_ctx->tenant_cycle_debt[t]);
+		sch_record_debt(bw_budget, bw_used,
+				&sch_ctx->tenant_bw_debt[t]);
 		cycle_pool += sch_budget_settle(sch_ctx->tenant_cycle_target[t],
 						sch_ctx->tenant_cycle_budget_cap[t],
 						cycle_used,
@@ -201,7 +206,7 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 				 TENANT_RESTRICT_NONE, __ATOMIC_RELAXED);
 	}
 
-	sch_apply_cycle_debt(sch_ctx, tenants_num);
+	sch_apply_resource_debt(sch_ctx, tenants_num);
 }
 #elif SCH_ROLLOVER_WORK_CONSERVING == SCH_ROLLOVER_MODE_DRF
 static inline __attribute__((always_inline)) size_t
@@ -359,14 +364,17 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		register size_t cycle_used = 0;
 		register size_t bw_used = 0;
 		register size_t cycle_budget = sch_ctx->tenant_cycle_budget[t];
+		register size_t bw_budget = sch_ctx->tenant_bw_budget[t];
 		register uint8_t tenant_restriction = sch_ctx->restrict_tenant[t];
 
 		cycle_used = __atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0,
 						__ATOMIC_RELAXED);
 		bw_used = __atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0,
 						__ATOMIC_RELAXED);
-		sch_cycle_record_debt(cycle_budget, cycle_used,
-				      &sch_ctx->tenant_cycle_debt[t]);
+		sch_record_debt(cycle_budget, cycle_used,
+				&sch_ctx->tenant_cycle_debt[t]);
+		sch_record_debt(bw_budget, bw_used,
+				&sch_ctx->tenant_bw_debt[t]);
 		cycle_pool += sch_budget_settle(sch_ctx->tenant_cycle_target[t],
 						sch_ctx->tenant_cycle_budget_cap[t],
 						cycle_used,
@@ -420,7 +428,7 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 		}
 	}
 
-	sch_apply_cycle_debt(sch_ctx, tenants_num);
+	sch_apply_resource_debt(sch_ctx, tenants_num);
 }
 #else
 #error "Unsupported SCH_ROLLOVER_WORK_CONSERVING mode"
@@ -432,13 +440,18 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 {
 	for (uint32_t t = 0; t < tenants_num; t++) {
 		size_t cycle_budget = sch_ctx->tenant_cycle_budget[t];
+		size_t bw_budget = sch_ctx->tenant_bw_budget[t];
 		size_t cycle_used =
 			__atomic_exchange_n(&sch_ctx->tenant_cycle_consumed[t], 0,
 						    __ATOMIC_RELAXED);
+		size_t bw_used =
+			__atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0,
+						    __ATOMIC_RELAXED);
 
-		__atomic_exchange_n(&sch_ctx->tenant_bw_consumed[t], 0, __ATOMIC_RELAXED);
-		sch_cycle_record_debt(cycle_budget, cycle_used,
-				      &sch_ctx->tenant_cycle_debt[t]);
+		sch_record_debt(cycle_budget, cycle_used,
+				&sch_ctx->tenant_cycle_debt[t]);
+		sch_record_debt(bw_budget, bw_used,
+				&sch_ctx->tenant_bw_debt[t]);
 		sch_ctx->tenant_cycle_budget[t] = sch_ctx->tenant_cycle_target[t];
 		sch_ctx->tenant_bw_budget[t] = sch_ctx->tenant_bw_target[t];
 		__atomic_store_n(&sch_ctx->restrict_tenant[t], TENANT_RESTRICT_NONE,
@@ -450,7 +463,7 @@ sch_rollover_budget(struct dpa_sche_context *sch_ctx,
 #if SCH_CYCLE_USAGE_REPORT
 	sch_ctx->tenant_cycle_report_periods++;
 #endif
-	sch_apply_cycle_debt(sch_ctx, tenants_num);
+	sch_apply_resource_debt(sch_ctx, tenants_num);
 }
 #endif
 

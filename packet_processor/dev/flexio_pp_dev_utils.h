@@ -151,6 +151,7 @@ struct dpa_sche_context {
 	size_t tenant_bw_budget[MAX_TENANT_NUM];
 	size_t tenant_bw_budget_cap[MAX_TENANT_NUM];
 	size_t tenant_cycle_debt[MAX_TENANT_NUM];
+	size_t tenant_bw_debt[MAX_TENANT_NUM];
 	uint8_t restrict_tenant[MAX_TENANT_NUM];
 	enum pp_workload_type tenant_workload_type[MAX_TENANT_NUM];
 #if SCH_CYCLE_USAGE_REPORT
