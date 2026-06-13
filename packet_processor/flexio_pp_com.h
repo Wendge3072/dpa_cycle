@@ -41,6 +41,7 @@
 #define WORKER_QUEUES_PER_THREAD 2
 #define MAX_TENANT_NUM 2
 #define DPA_FREQ_HZ 1800000000ULL  // 1.8GHz
+#define QOS_RESOURCE_PERCENT_TOTAL 100
 
 /* Every usage of this value is in bytes */
 #define MATCH_VAL_BSIZE 64
@@ -167,6 +168,15 @@ struct host2dev_packet_processor_data_sch {
 	size_t scheduler_num;
 	size_t threads_num_per_scheduler;
 	size_t tenants_num;
+} __attribute__((__packed__, aligned(8)));
+
+struct host2dev_qos_update {
+	size_t scheduler_num;
+	size_t threads_num_per_scheduler;
+	size_t tenants_num;
+	int buffer_location;
+	uint32_t cycle_weights[MAX_TENANT_NUM];
+	uint32_t bandwidth_weights[MAX_TENANT_NUM];
 } __attribute__((__packed__, aligned(8)));
 
 

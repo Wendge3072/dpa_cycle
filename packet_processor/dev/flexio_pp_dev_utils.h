@@ -78,10 +78,10 @@ sch 线程 rollover 模式切换开关
 
 // static uint32_t cycle_weights[MAX_TENANT_NUM] = {60, 40};
 // static uint32_t cycle_weights[MAX_TENANT_NUM] = {30, 70};
-static uint32_t cycle_weights[MAX_TENANT_NUM] = {1, 1};
+static uint32_t cycle_weights[MAX_TENANT_NUM] = {50, 50};
 
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {40, 60};
-static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {1, 1};
+static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {50, 50};
 // static uint32_t bandwidth_weights[MAX_TENANT_NUM] = {30, 60};
 
 enum pp_workload_type {
@@ -195,6 +195,10 @@ extern struct offload_dispatch_info offload_info[190];
 void spin_on_status(uint16_t thd_id, eu_status expected_status);
 void sch_ctx_init(struct flexio_dev_thread_ctx *dtctx,
              struct host2dev_packet_processor_data_sch *data_from_host);
+void sch_apply_qos_update(struct host2dev_qos_update *qos_update);
+
+extern flexio_dev_rpc_handler_t qos_update;
+__dpa_rpc__ uint64_t qos_update(uint64_t data);
 
 static inline __attribute__((always_inline)) int
 pp_queue_acquire_host_buffer(struct flexio_dev_thread_ctx *dtctx,

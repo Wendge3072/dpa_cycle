@@ -1,4 +1,6 @@
 #include "flexio_pp_host_utils.h"
+#include <errno.h>
+#include <string.h>
 
 size_t scheduler_num = 1;
 size_t tenants_num = 2;
@@ -13,6 +15,145 @@ size_t use_copy = 1;
 static size_t align_to_cacheline(size_t size)
 {
 	return (size + 63) & ~(size_t)63;
+}
+
+static int qos_line_is_exit(const char *line)
+{
+	size_t token_len = 0;
+
+	while (*line == ' ' || *line == '\t' || *line == '\n' || *line == '\r') {
+		line++;
+	}
+	while (line[token_len] &&
+	       line[token_len] != ' ' &&
+	       line[token_len] != '\t' &&
+	       line[token_len] != '\n' &&
+	       line[token_len] != '\r') {
+		token_len++;
+	}
+
+	return (token_len == 1 && !strncmp(line, "q", token_len)) ||
+	       (token_len == 4 && !strncmp(line, "quit", token_len)) ||
+	       (token_len == 4 && !strncmp(line, "exit", token_len));
+}
+
+static int parse_qos_request(const char *line, struct host2dev_qos_update *update)
+{
+	uint32_t values[MAX_TENANT_NUM * 2] = {0};
+	uint32_t tenant_count = tenants_num > MAX_TENANT_NUM ?
+				MAX_TENANT_NUM : tenants_num;
+	uint32_t needed = tenant_count * 2;
+	uint32_t parsed = 0;
+	uint32_t cycle_sum = 0;
+	uint32_t bw_sum = 0;
+	const char *cursor = line;
+
+	while (*cursor && parsed < needed) {
+		char *end = NULL;
+		unsigned long value = 0;
+
+		while (*cursor && (*cursor < '0' || *cursor > '9')) {
+			cursor++;
+		}
+		if (!*cursor) {
+			break;
+		}
+		if (cursor > line && cursor[-1] == '-') {
+			return -1;
+		}
+		errno = 0;
+		value = strtoul(cursor, &end, 10);
+		if (errno || end == cursor || value > QOS_RESOURCE_PERCENT_TOTAL) {
+			return -1;
+		}
+		values[parsed++] = (uint32_t)value;
+		cursor = end;
+	}
+
+	if (parsed != needed) {
+		return -1;
+	}
+
+	memset(update, 0, sizeof(*update));
+	update->scheduler_num = scheduler_num;
+	update->threads_num_per_scheduler = threads_num_per_scheduler;
+	update->tenants_num = tenant_count;
+	update->buffer_location = buffer_location;
+
+	for (uint32_t t = 0; t < tenant_count; t++) {
+		update->cycle_weights[t] = values[t];
+		update->bandwidth_weights[t] = values[tenant_count + t];
+		cycle_sum += update->cycle_weights[t];
+		bw_sum += update->bandwidth_weights[t];
+	}
+
+	if (cycle_sum > QOS_RESOURCE_PERCENT_TOTAL ||
+	    bw_sum > QOS_RESOURCE_PERCENT_TOTAL) {
+		return -1;
+	}
+
+	return 0;
+}
+
+static int send_qos_update(struct app_context *app_ctx,
+			   struct host2dev_qos_update *update)
+{
+	flexio_uintptr_t update_daddr = 0;
+	uint64_t rpc_ret_val = 0;
+	int ret = 0;
+
+	if (flexio_copy_from_host(app_ctx->flexio_process, update, sizeof(*update),
+				  &update_daddr)) {
+		printf("Failed to copy QoS update to DPA.\n");
+		return -1;
+	}
+
+	if (flexio_process_call(app_ctx->flexio_process, &qos_update,
+				&rpc_ret_val, update_daddr)) {
+		printf("Failed to call QoS update RPC.\n");
+		ret = -1;
+	} else if (rpc_ret_val) {
+		printf("QoS update rejected by DPA, rpc_ret=%" PRIu64 "\n",
+		       rpc_ret_val);
+		ret = -1;
+	}
+
+	if (flexio_buf_dev_free(app_ctx->flexio_process, update_daddr)) {
+		printf("Failed to free QoS update buffer on DPA heap.\n");
+		ret = -1;
+	}
+
+	return ret;
+}
+
+static int listen_for_qos_requests(struct app_context *app_ctx)
+{
+	char line[256];
+
+	printf("QoS listener started. Use: qos <cycle_t0> <cycle_t1> <bw_t0> <bw_t1>, or q to exit.\n");
+	while (fgets(line, sizeof(line), stdin)) {
+		struct host2dev_qos_update update;
+
+		if (qos_line_is_exit(line)) {
+			break;
+		}
+		if (parse_qos_request(line, &update)) {
+			printf("Invalid QoS request. Example for %zu tenants: qos 30 40 30 40. Sums must be <= 100.\n",
+			       tenants_num);
+			continue;
+		}
+		if (!send_qos_update(app_ctx, &update)) {
+			printf("QoS updated:");
+			for (uint32_t t = 0; t < update.tenants_num; t++) {
+				printf(" tenant%u(cycle=%u%%, bw=%u%%)", t,
+				       update.cycle_weights[t],
+				       update.bandwidth_weights[t]);
+			}
+			printf("\n");
+		}
+	}
+
+	return 0;
 }
 
 static int alloc_context_host_memory(struct app_context *app_ctx,
@@ -118,7 +259,6 @@ int main(int argc, char **argv)
 		buffer_location = atoi(argv[7]);
 	}
 
-	char buf[2];
 	int err = 0;
 	flexio_status ret = 0;
 	struct flexio_process_attr process_attr = { NULL, 0 };
@@ -321,10 +461,7 @@ int main(int argc, char **argv)
 
 	}
 
-	/* Wait for Enter - the DPA sample is running in the meanwhile */
-	if (!fread(buf, 1, 1, stdin)) {
-		printf("Failed in fread\n");
-	}
+	listen_for_qos_requests(&app_ctx);
 
 cleanup:
 	/* Clean up flow is done in reverse order of creation as there's a refernce system
